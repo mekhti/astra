@@ -177,4 +177,4 @@ static void module_destroy(module_data_t *mod)
 
 MODULE_METHODS_EMPTY();
 
-MODULE(sdp)
+MODULE(sap)
