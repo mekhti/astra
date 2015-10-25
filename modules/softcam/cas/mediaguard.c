@@ -77,27 +77,44 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
  * data     :length-4
  */
 
-static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
+static bool cas_check_cat_desc(module_data_t *mod, const uint8_t *desc)
 {
     __uarg(mod);
     __uarg(desc);
+    return true;
+}
 
-#if 0
-    const int length = desc[1] - 4;
-    if(length < 2)
+static bool cas_check_pmt_desc(module_data_t *mod, const uint8_t *desc)
+{
+    const size_t size = desc[1] - 4;
+    size_t skip = 0;
+
+    uint8_t *cas_data = mod->__cas.decrypt->cas_data;
+    if(cas_data[0] || cas_data[1])
+    {
+        do
+        {
+            if(cas_data[0] == desc[6 + skip + 0] && cas_data[1] == desc[6 + skip + 1])
+                return true;
+            skip += 15;
+        } while(skip < size);
         return false;
+    }
 
     asc_list_for(mod->__cas.decrypt->cam->prov_list)
     {
-        uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
-        if((prov[1] == desc[6]) && (prov[2] == desc[7]))
-            return true;
+        const uint8_t *prov = (uint8_t *)asc_list_data(mod->__cas.decrypt->cam->prov_list);
+
+        skip = 0;
+        do
+        {
+            if(prov[1] == desc[6 + skip + 0] && prov[2] == desc[6 + skip + 1])
+                return true;
+            skip += 15;
+        } while(skip < size);
     }
 
     return false;
-#endif
-
-    return true;
 }
 
 static bool cas_check_caid(uint16_t caid)

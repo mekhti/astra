@@ -22,7 +22,6 @@
 #include "event.h"
 #include "list.h"
 #include "log.h"
-#include "loopctl.h"
 
 #ifndef EV_LIST_SIZE
 #   define EV_LIST_SIZE 1024
@@ -44,11 +43,10 @@
 #   define EV_TYPE_EPOLL
 #   include <sys/epoll.h>
 #   define EV_OTYPE struct epoll_event
-#   ifdef EPOLLRDHUP
-#       define EPOLLCLOSE (EPOLLERR | EPOLLRDHUP)
-#   else
-#       define EPOLLCLOSE (EPOLLERR | EPOLLHUP)
+#   ifndef EPOLLRDHUP
+#       define EPOLLRDHUP 0x2000
 #   endif
+#   define EPOLLCLOSE (EPOLLERR | EPOLLHUP)
 #   define MSG(_msg) "[core/event epoll] " _msg
 #else
 #   error "Event notification interface not set"
@@ -135,10 +133,12 @@ void asc_event_core_destroy(void)
     event_observer.event_list = NULL;
 }
 
-void asc_event_core_loop(void)
+bool asc_event_core_loop(void)
 {
+    bool idle = true;
+
     if(!asc_list_size(event_observer.event_list))
-        return;
+        return idle;
 
 #if defined(EV_TYPE_KQUEUE)
     static const struct timespec timeout = { 0, 0 };
@@ -151,7 +151,7 @@ void asc_event_core_loop(void)
     if(ret == -1)
     {
         asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
-        return;
+        return idle;
     }
 
     event_observer.is_changed = false;
@@ -171,26 +171,28 @@ void asc_event_core_loop(void)
 #endif
         if(event->on_read && is_rd)
         {
-            is_main_loop_idle = false;
+            idle = false;
             event->on_read(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_error && is_er)
         {
-            is_main_loop_idle = false;
+            idle = false;
             event->on_error(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_write && is_wr)
         {
-            is_main_loop_idle = false;
+            idle = false;
             event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
     }
+
+    return idle;
 }
 
 static void asc_event_subscribe(asc_event_t *event)
@@ -233,7 +235,7 @@ static void asc_event_subscribe(asc_event_t *event)
 #else /* EV_TYPE_EPOLL */
 
     ed.data.ptr = event;
-    ed.events = EPOLLCLOSE;
+    ed.events = EPOLLCLOSE | EPOLLRDHUP;
     if(event->on_read)
         ed.events |= EPOLLIN;
     if(event->on_write)
@@ -339,16 +341,18 @@ void asc_event_core_destroy(void)
     }
 }
 
-void asc_event_core_loop(void)
+bool asc_event_core_loop(void)
 {
+    bool idle = true;
+
     if(!event_observer.fd_count)
-        return;
+        return idle;
 
     int ret = poll(event_observer.fd_list, event_observer.fd_count, 10);
     if(ret == -1)
     {
         asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
-        return;
+        return idle;
     }
 
     event_observer.is_changed = false;
@@ -362,26 +366,28 @@ void asc_event_core_loop(void)
         asc_event_t *event = event_observer.event_list[i];
         if(event->on_read && (revents & POLLIN))
         {
-            is_main_loop_idle = false;
+            idle = false;
             event->on_read(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_error && (revents & (POLLERR | POLLHUP | POLLNVAL)))
         {
-            is_main_loop_idle = false;
+            idle = false;
             event->on_error(event->arg);
             if(event_observer.is_changed)
                 break;
         }
         if(event->on_write && (revents & POLLOUT))
         {
-            is_main_loop_idle = false;
+            idle = false;
             event->on_write(event->arg);
             if(event_observer.is_changed)
                 break;
         }
     }
+
+    return idle;
 }
 
 static void asc_event_subscribe(asc_event_t *event)
@@ -496,10 +502,12 @@ void asc_event_core_destroy(void)
     event_observer.event_list = NULL;
 }
 
-void asc_event_core_loop(void)
+bool asc_event_core_loop(void)
 {
+    bool idle = true;
+
     if(!asc_list_size(event_observer.event_list))
-        return;
+        return idle;
 
     fd_set rset;
     fd_set wset;
@@ -518,7 +526,7 @@ void asc_event_core_loop(void)
 #else
         asc_assert(errno == EINTR, MSG("event observer critical error [%s]"), strerror(errno));
 #endif
-        return;
+        return idle;
     }
     else if(ret > 0)
     {
@@ -528,27 +536,29 @@ void asc_event_core_loop(void)
             asc_event_t *event = (asc_event_t *)asc_list_data(event_observer.event_list);
             if(event->on_read && FD_ISSET(event->fd, &rset))
             {
-                is_main_loop_idle = false;
+                idle = false;
                 event->on_read(event->arg);
                 if(event_observer.is_changed)
                     break;
             }
             if(event->on_error && FD_ISSET(event->fd, &eset))
             {
-                is_main_loop_idle = false;
+                idle = false;
                 event->on_error(event->arg);
                 if(event_observer.is_changed)
                     break;
             }
             if(event->on_write && FD_ISSET(event->fd, &wset))
             {
-                is_main_loop_idle = false;
+                idle = false;
                 event->on_write(event->arg);
                 if(event_observer.is_changed)
                     break;
             }
         }
     }
+
+    return idle;
 }
 
 static void asc_event_subscribe(asc_event_t *event)
@@ -604,9 +614,7 @@ void asc_event_close(asc_event_t *event)
     }
 
     event_observer.max_fd = 0;
-    for(asc_list_first(event_observer.event_list)
-        ; !asc_list_eol(event_observer.event_list)
-        ; )
+    for(asc_list_first(event_observer.event_list); !asc_list_eol(event_observer.event_list); )
     {
         asc_event_t *i_event = (asc_event_t *)asc_list_data(event_observer.event_list);
         if(i_event == event)

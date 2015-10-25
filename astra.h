@@ -22,28 +22,13 @@
 #define _ASTRA_H_ 1
 
 #include "core/asc.h"
-
-#include "modules/astra/base.h"
-#include "modules/astra/module_lua.h"
-#include "modules/astra/module_stream.h"
-
+#include "modules/astra/base64.h"
+#include "modules/astra/crc32.h"
+#include "modules/astra/iso8859.h"
+#include "modules/astra/md5.h"
+#include "modules/astra/rc4.h"
+#include "modules/astra/sha1.h"
+#include "modules/astra/strhex.h"
 #include "modules/mpegts/mpegts.h"
-
-/* version */
-
-#include "version.h"
-#define __VSTR(_x) #_x
-#define _VSTR(_x) __VSTR(_x)
-#define _VERSION _VSTR(ASTRA_VERSION_MAJOR) "." \
-                 _VSTR(ASTRA_VERSION_MINOR) "." \
-                 _VSTR(ASTRA_VERSION_PATCH)
-
-#ifdef DEBUG
-#   define _VDEBUG " debug"
-#else
-#   define _VDEBUG
-#endif
-
-#define ASTRA_VERSION_STR _VERSION _VDEBUG
 
 #endif /* _ASTRA_H_ */

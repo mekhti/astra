@@ -31,7 +31,7 @@ mpegts_pes_t * mpegts_pes_init(mpegts_packet_type_t type, uint16_t pid, uint32_t
 
     pes->pcr_interval = pcr_interval * 1000;
     pes->pcr_time = 0;
-    pes->pcr_time_offset = 0;
+    pes->pcr_time_start = 0;
 
     pes->ts[0] = 0x47;
     pes->ts[1] = 0x00;
@@ -63,7 +63,6 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
         {
             pes->buffer_size = pes->buffer_skip;
             pes->buffer_skip = 0;
-            pes->block_time_total = asc_utime() - pes->block_time_begin;
             callback(arg, pes);
         }
 
@@ -74,7 +73,6 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
             return;
 
         pes->buffer_size = PES_BUFFER_GET_SIZE(payload);
-        pes->block_time_begin = asc_utime();
 
         memcpy(pes->buffer, payload, payload_len);
         pes->buffer_skip = payload_len;
@@ -82,7 +80,6 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
         if(pes->buffer_size == pes->buffer_skip)
         {
             pes->buffer_skip = 0;
-            pes->block_time_total = 0;
             callback(arg, pes);
         }
     }
@@ -103,26 +100,10 @@ void mpegts_pes_mux(mpegts_pes_t *pes, const uint8_t *ts, pes_callback_t callbac
         if(pes->buffer_size == pes->buffer_skip)
         {
             pes->buffer_skip = 0;
-            pes->block_time_total = asc_utime() - pes->block_time_begin;
             callback(arg, pes);
         }
     }
     pes->cc = cc;
-}
-
-static inline bool check_pcr_time(mpegts_pes_t *pes)
-{
-    const uint64_t offset = (pes->buffer_skip * pes->block_time_total) / (pes->buffer_size);
-    const uint64_t block_time_offset = pes->pcr_time_offset + pes->block_time_begin + offset;
-    const uint64_t pcr_time_next = pes->pcr_time + pes->pcr_interval;
-    if(block_time_offset >= pcr_time_next)
-    {
-        pes->pcr_time = pcr_time_next;
-        pes->pcr_time_offset = block_time_offset - pcr_time_next;
-        return true;
-    }
-
-    return false;
 }
 
 void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
@@ -131,32 +112,13 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
         return;
 
     pes->buffer_skip = 0;
-
-    if(pes->pcr_interval && check_pcr_time(pes))
-    {
-        pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
-        pes->ts[3] = 0x20 | pes->cc; /* adaptation field only */
-        pes->ts[4] = 1 + 6 + 176; /* 1 - ts[5]; 6 - PCR field; 176 - stuff */
-        pes->ts[5] = 0x10; /* PCR flag */
-
-        // TODO: random access indicator
-
-        const uint64_t pcr_base = pes->pcr_time * 90 / 1000;
-        const uint64_t pcr_ext = pes->pcr_time * 27000 / 1000;
-        const uint64_t pcr = (pcr_base * 300) + (pcr_ext % 300);
-        TS_SET_PCR(pes->ts, pcr);
-        memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
-
-        callback(arg, pes->ts);
-    }
+    pes->ts[1] = pes->ts[1] | 0x40; /* set PUSI */
 
     do
     {
-        if(pes->buffer_skip == 0)
-            pes->ts[1] = pes->ts[1] | 0x40; /* set PUSI */
-        pes->cc = (pes->cc + 1) & 0x0F;
-
         const size_t buffer_tail = pes->buffer_size - pes->buffer_skip;
+
+        pes->cc = (pes->cc + 1) & 0x0F;
 
         if(buffer_tail >= TS_BODY_SIZE)
         {
@@ -188,4 +150,25 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg)
         if(TS_IS_PAYLOAD_START(pes->ts))
             pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
     } while(pes->buffer_skip != pes->buffer_size);
+
+    if(pes->pcr_interval)
+    {
+        const uint64_t current_time = asc_utime();
+        if(pes->pcr_time_start == 0)
+            pes->pcr_time_start = current_time;
+        const uint64_t current_time_diff = current_time - pes->pcr_time_start;
+        if(current_time_diff >= pes->pcr_time + pes->pcr_interval)
+        {
+            pes->pcr_time = current_time_diff;
+
+            pes->ts[1] = pes->ts[1] & ~0x40; /* unset PUSI */
+            pes->ts[3] = 0x20 | pes->cc; /* adaptation field only */
+            pes->ts[4] = 1 + 6 + 176; /* 1 - ts[5]; 6 - PCR field; 176 - stuff */
+            pes->ts[5] = 0x10; /* PCR flag */
+
+            TS_SET_PCR(pes->ts, pes->pcr_time * 27);
+            memset(&pes->ts[12], 0xFF, TS_PACKET_SIZE - 12);
+            callback(arg, pes->ts);
+        }
+    }
 }

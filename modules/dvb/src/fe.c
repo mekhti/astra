@@ -42,7 +42,7 @@ static void fe_clear(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_CLEAR failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     struct dvb_frontend_event fe_event;
@@ -143,7 +143,7 @@ static void fe_check_status(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_READ_STATUS, &fe_status) != 0)
     {
         asc_log_error(MSG("FE_READ_STATUS failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     fe_read_status(fe, fe_status);
@@ -191,13 +191,13 @@ static void diseqc_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_TONE, SEC_TONE_OFF) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_TONE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, fe->voltage) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_VOLTAGE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     asc_usleep(15000);
@@ -216,7 +216,7 @@ static void diseqc_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_DISEQC_SEND_MASTER_CMD, &cmd) != 0)
     {
         asc_log_error(MSG("diseqc: FE_DISEQC_SEND_MASTER_CMD failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     asc_usleep(15000);
@@ -225,7 +225,7 @@ static void diseqc_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_DISEQC_SEND_BURST, burst) != 0)
     {
         asc_log_error(MSG("diseqc: FE_DISEQC_SEND_BURST failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     asc_usleep(15000);
@@ -233,7 +233,7 @@ static void diseqc_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_TONE, fe->tone) != 0)
     {
         asc_log_error(MSG("diseqc: FE_SET_TONE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 } /* diseqc_setup */
 
@@ -264,7 +264,7 @@ static void unicable_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, SEC_VOLTAGE_18) != 0)
     {
         asc_log_error(MSG("unicable: FE_SET_VOLTAGE 18 failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     asc_usleep(15000);
@@ -272,7 +272,7 @@ static void unicable_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_DISEQC_SEND_MASTER_CMD, &cmd) != 0)
     {
         asc_log_error(MSG("unicable: FE_DISEQC_SEND_MASTER_CMD failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     asc_usleep(50000);
@@ -280,7 +280,7 @@ static void unicable_setup(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_VOLTAGE, SEC_VOLTAGE_13) != 0)
     {
         asc_log_error(MSG("unicable: FE_SET_VOLTAGE 13 failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 } /* unicable_setup */
 
@@ -343,7 +343,7 @@ static void fe_tune_s(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 }
 
@@ -397,7 +397,7 @@ static void fe_tune_t(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 }
 
@@ -429,7 +429,7 @@ static void fe_tune_c(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 }
 
@@ -458,7 +458,7 @@ static void fe_tune_atsc(dvb_fe_t *fe)
     if(ioctl(fe->fe_fd, FE_SET_PROPERTY, &cmdseq) != 0)
     {
         asc_log_error(MSG("FE_SET_PROPERTY DTV_TUNE failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 }
 
@@ -491,7 +491,7 @@ static void fe_tune(dvb_fe_t *fe)
             fe_tune_atsc(fe);
             break;
         default:
-            astra_abort();
+            asc_abort();
     }
 }
 
@@ -505,7 +505,7 @@ void fe_open(dvb_fe_t *fe)
     if(fe->fe_fd <= 0)
     {
         asc_log_error(MSG("failed to open frontend [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     if(fe->type != DVB_TYPE_UNKNOWN)

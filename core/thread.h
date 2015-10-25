@@ -29,7 +29,7 @@ typedef void (*thread_callback_t)(void *);
 
 void asc_thread_core_init(void);
 void asc_thread_core_destroy(void);
-void asc_thread_core_loop(void);
+bool asc_thread_core_loop(void) __wur;
 
 asc_thread_t * asc_thread_init(void *arg) __wur;
 void asc_thread_start(  asc_thread_t *thread

@@ -65,7 +65,14 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
  * data     :length-4
  */
 
-static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
+static bool cas_check_cat_desc(module_data_t *mod, const uint8_t *desc)
+{
+    __uarg(mod);
+    __uarg(desc);
+    return true;
+}
+
+static bool cas_check_pmt_desc(module_data_t *mod, const uint8_t *desc)
 {
     __uarg(mod);
     __uarg(desc);

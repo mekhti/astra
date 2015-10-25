@@ -1,9 +1,8 @@
 /*
- * Astra Core (Main loop control)
+ * Astra Core
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
- *                    2015, Artem Kharitonov <artem@sysert.ru>
+ * Copyright (C) 2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,20 +18,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _ASC_LOOPCTL_H_
-#define _ASC_LOOPCTL_H_ 1
+#ifndef _ASC_RAND_H_
+#define _ASC_RAND_H_ 1
 
 #include "base.h"
 
-extern jmp_buf main_loop;
-extern bool is_main_loop_idle;
+void asc_srand(void);
 
-#ifdef WITH_LUA
-extern lua_State *lua;
-#endif /* WITH_LUA */
+void random_key(uint8_t *buffer, size_t size);
 
-void astra_exit(void) __noreturn;
-void astra_abort(void) __noreturn;
-void astra_reload(void) __noreturn;
-
-#endif /* _ASC_LOOPCTL_H_ */
+#endif /* _ASC_RAND_H_ */

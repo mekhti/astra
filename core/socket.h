@@ -29,6 +29,7 @@ typedef struct asc_socket_t asc_socket_t;
 void asc_socket_core_init(void);
 void asc_socket_core_destroy(void);
 
+int asc_socket_errno(void);
 const char * asc_socket_error(void);
 
 asc_socket_t * asc_socket_open_tcp4(void * arg) __wur;
@@ -69,6 +70,7 @@ void asc_socket_set_keep_alive(asc_socket_t *sock, int is_on);
 void asc_socket_set_broadcast(asc_socket_t *sock, int is_on);
 void asc_socket_set_timeout(asc_socket_t *sock, int rcvmsec, int sndmsec);
 void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf);
+void asc_socket_set_congestion(asc_socket_t *sock, const char *alg);
 
 void asc_socket_set_multicast_if(asc_socket_t *sock, const char *addr);
 void asc_socket_set_multicast_ttl(asc_socket_t *sock, int ttl);

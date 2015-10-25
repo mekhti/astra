@@ -24,6 +24,7 @@
 
 typedef module_cas_t * (*cas_init_t)(module_decrypt_t *decrypt);
 
+module_cas_t * base_cas_init(module_decrypt_t *decrypt);
 module_cas_t * bulcrypt_cas_init(module_decrypt_t *decrypt);
 module_cas_t * conax_cas_init(module_decrypt_t *decrypt);
 module_cas_t * cryptoworks_cas_init(module_decrypt_t *decrypt);

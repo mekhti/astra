@@ -118,7 +118,7 @@ static bool cas_check_keys(module_data_t *mod, const uint8_t *keys)
  * data     :length-4
  */
 
-static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
+static bool cas_check_cat_desc(module_data_t *mod, const uint8_t *desc)
 {
     if(mod->card)
         return 0;
@@ -136,39 +136,38 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
 
     uint8_t *cas_data = mod->__cas.decrypt->cas_data;
     if(cas_data[0])
-    {
-        if(cas_data[0] == dre_id)
-            return true;
-    }
-    else
-    {
-        int is_prov_ident = 0;
+        return (cas_data[0] == dre_id);
 
-        asc_list_for(mod->__cas.decrypt->cam->prov_list)
-        {
-            uint8_t *prov = asc_list_data(mod->__cas.decrypt->cam->prov_list);
-            if(prov[2])
-            {
-                is_prov_ident = 1;
-                if(prov[2] == dre_id)
-                    return true;
-            }
-        }
+    int is_prov_ident = 0;
 
-        if(!is_prov_ident && !mod->is_cas_data_error)
+    asc_list_for(mod->__cas.decrypt->cam->prov_list)
+    {
+        const uint8_t *prov = (uint8_t *)asc_list_data(mod->__cas.decrypt->cam->prov_list);
+        if(prov[2])
         {
-            asc_log_error("[cas DRE] cas_data is not set");
-            mod->is_cas_data_error = true;
+            is_prov_ident = 1;
+            if(prov[2] == dre_id)
+                return true;
         }
     }
 
-    return 0;
+    if(!is_prov_ident && !mod->is_cas_data_error)
+    {
+        asc_log_error("[cas DRE] cas_data is not set");
+        mod->is_cas_data_error = true;
+    }
+
+    return false;
+}
+
+static bool cas_check_pmt_desc(module_data_t *mod, const uint8_t *desc)
+{
+    return cas_check_cat_desc(mod, desc);
 }
 
 static bool cas_check_caid(uint16_t caid)
 {
-    caid &= ~1;
-    return (caid == 0x4AE0 || caid == 0x7BE0);
+    return (caid == 0x4AE0 || caid == 0x4AE1 || caid == 0x7BE0 || caid == 0x7BE1);
 }
 
 MODULE_CAS(dre)

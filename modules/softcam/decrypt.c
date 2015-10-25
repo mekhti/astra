@@ -2,7 +2,7 @@
  * Astra Module: SoftCAM. Decrypt Module
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,27 +29,32 @@
  *      cam         - object, cam instance returned by cam_module_instance:cam()
  *      cas_data    - string, additional paramters for CAS
  *      cas_pnr     - number, original PNR
+ *      no_decrypt  - boolean, do not decrypt stream
  */
 
 #include <astra.h>
 #include "module_cam.h"
 #include "cas/cas_list.h"
 
-#ifndef FFDECSA
-#   define FFDECSA 1
-#endif
-
-#ifndef LIBDVBCSA
-#   define LIBDVBCSA 0
-#endif
-
-#if FFDECSA == 1
+#ifdef HAVE_FFDECSA
+#   ifdef HAVE_LIBDVBCSA
+#       undef HAVE_LIBDVBCSA
+#   endif
 #   include "FFdecsa/FFdecsa.h"
-#elif LIBDVBCSA == 1
-#   include <dvbcsa/dvbcsa.h>
 #else
-#   error "DVB-CSA is not defined"
+#   ifndef HAVE_LIBDVBCSA
+#       error "DVB-CSA is not defined"
+#   endif
+#   include <dvbcsa/dvbcsa.h>
 #endif
+
+#define CSA_KEY_SIZE 8
+
+typedef union
+{
+    uint8_t a[CSA_KEY_SIZE];
+    uint64_t l;
+} csa_key_t;
 
 typedef struct
 {
@@ -59,23 +64,21 @@ typedef struct
     bool is_keys;
     uint8_t parity;
 
-#if FFDECSA == 1
-
-    void *keys;
-    uint8_t **batch;
-
-#elif LIBDVBCSA == 1
-
-    struct dvbcsa_bs_key_s *even_key;
-    struct dvbcsa_bs_key_s *odd_key;
-    struct dvbcsa_bs_batch_s *batch;
-
+    struct
+    {
+#ifdef HAVE_LIBDVBCSA
+        struct dvbcsa_bs_key_s *even_key;
+        struct dvbcsa_bs_key_s *odd_key;
+        struct dvbcsa_bs_batch_s *batch;
+#else
+        void *keys;
+        uint8_t **batch;
 #endif
+        size_t batch_skip;
+    } csa;
 
-    size_t batch_skip;
-
-    int new_key_id;  // 0 - not, 1 - first key, 2 - second key, 3 - both keys
-    uint8_t new_key[16];
+    int current_key;  // 0 - not, 1 - first key, 2 - second key, 3 - both keys
+    csa_key_t keys[2];
 
     uint64_t sendtime;
 } ca_stream_t;
@@ -83,7 +86,6 @@ typedef struct
 typedef struct
 {
     uint16_t es_pid;
-
     ca_stream_t *ca_stream;
 } el_stream_t;
 
@@ -97,6 +99,7 @@ struct module_data_t
     int caid;
     bool disable_emm;
     int ecm_pid;
+    bool no_decrypt;
 
     /* dvbcsa */
     asc_list_t *el_list;
@@ -139,11 +142,11 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
     asc_list_for(mod->ca_list)
     {
         ca_stream = asc_list_data(mod->ca_list);
-#if FFDECSA == 1
-        return ca_stream;
-#else
+#ifdef HAVE_LIBDVBCSA
         if(ca_stream->ecm_pid == ecm_pid)
             return ca_stream;
+#else
+        return ca_stream;
 #endif
     }
 
@@ -152,17 +155,13 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
 
     ca_stream->ecm_pid = ecm_pid;
 
-#if FFDECSA == 1
-
-    ca_stream->keys = get_key_struct();
-    ca_stream->batch = calloc(mod->batch_size * 2 + 2, sizeof(uint8_t *));
-
-#elif LIBDVBCSA == 1
-
-    ca_stream->even_key = dvbcsa_bs_key_alloc();
-    ca_stream->odd_key = dvbcsa_bs_key_alloc();
-    ca_stream->batch = calloc(mod->batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
-
+#ifdef HAVE_LIBDVBCSA
+    ca_stream->csa.even_key = dvbcsa_bs_key_alloc();
+    ca_stream->csa.odd_key = dvbcsa_bs_key_alloc();
+    ca_stream->csa.batch = calloc(mod->batch_size + 1, sizeof(struct dvbcsa_bs_batch_s));
+#else
+    ca_stream->csa.keys = get_key_struct();
+    ca_stream->csa.batch = calloc(mod->batch_size * 2 + 2, sizeof(uint8_t *));
 #endif
 
     asc_list_insert_tail(mod->ca_list, ca_stream);
@@ -172,17 +171,13 @@ ca_stream_t * ca_stream_init(module_data_t *mod, uint16_t ecm_pid)
 
 void ca_stream_destroy(ca_stream_t *ca_stream)
 {
-#if FFDECSA == 1
-
-    free_key_struct(ca_stream->keys);
-    free(ca_stream->batch);
-
-#elif LIBDVBCSA == 1
-
-    dvbcsa_bs_key_free(ca_stream->even_key);
-    dvbcsa_bs_key_free(ca_stream->odd_key);
-    free(ca_stream->batch);
-
+#ifdef HAVE_LIBDVBCSA
+    dvbcsa_bs_key_free(ca_stream->csa.even_key);
+    dvbcsa_bs_key_free(ca_stream->csa.odd_key);
+    free(ca_stream->csa.batch);
+#else
+    free_key_struct(ca_stream->csa.keys);
+    free(ca_stream->csa.batch);
 #endif
 
     free(ca_stream);
@@ -190,20 +185,16 @@ void ca_stream_destroy(ca_stream_t *ca_stream)
 
 void ca_stream_set_keys(ca_stream_t *ca_stream, const uint8_t *even, const uint8_t *odd)
 {
-#if FFDECSA == 1
-
+#ifdef HAVE_LIBDVBCSA
     if(even)
-        set_even_control_word(ca_stream->keys, even);
+        dvbcsa_bs_key_set(even, ca_stream->csa.even_key);
     if(odd)
-        set_odd_control_word(ca_stream->keys, odd);
-
-#elif LIBDVBCSA == 1
-
+        dvbcsa_bs_key_set(odd, ca_stream->csa.odd_key);
+#else
     if(even)
-        dvbcsa_bs_key_set(even, ca_stream->even_key);
+        set_even_control_word(ca_stream->csa.keys, even);
     if(odd)
-        dvbcsa_bs_key_set(odd, ca_stream->odd_key);
-
+        set_odd_control_word(ca_stream->csa.keys, odd);
 #endif
 }
 
@@ -215,20 +206,15 @@ static void module_decrypt_cas_init(module_data_t *mod)
         if(mod->__decrypt.cas)
             return;
     }
-    asc_assert(mod->__decrypt.cas != NULL, MSG("CAS with CAID:0x%04X not found"), mod->caid);
+    asc_log_warning(MSG("CAS with CAID:0x%04X not found"), mod->caid);
+    mod->__decrypt.cas = base_cas_init(&mod->__decrypt);
 }
 
 static void module_decrypt_cas_destroy(module_data_t *mod)
 {
-    if(mod->__decrypt.cas)
-    {
-        free(mod->__decrypt.cas->self);
-        mod->__decrypt.cas = NULL;
-    }
+    ASC_FREE(mod->__decrypt.cas, free);
 
-    for(  asc_list_first(mod->el_list)
-        ; !asc_list_eol(mod->el_list)
-        ; asc_list_remove_current(mod->el_list))
+    asc_list_clear(mod->el_list)
     {
         el_stream_t *el_stream = asc_list_data(mod->el_list);
         free(el_stream);
@@ -238,13 +224,11 @@ static void module_decrypt_cas_destroy(module_data_t *mod)
     {
         asc_list_first(mod->ca_list);
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
-        ca_stream->batch_skip = 0;
+        ca_stream->csa.batch_skip = 0;
         return;
     }
 
-    for(  asc_list_first(mod->ca_list)
-        ; !asc_list_eol(mod->ca_list)
-        ; asc_list_remove_current(mod->ca_list))
+    asc_list_clear(mod->ca_list)
     {
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
         ca_stream_destroy(ca_stream);
@@ -277,11 +261,11 @@ static void stream_reload(module_data_t *mod)
 }
 
 /*
- * oooooooooo   o   ooooooooooo
- *  888    888 888  88  888  88
- *  888oooo88 8  88     888
- *  888      8oooo88    888
- * o888o   o88o  o888o o888o
+ *  ____   _  _____
+ * |  _ \ / \|_   _|
+ * | |_) / _ \ | |
+ * |  __/ ___ \| |
+ * |_| /_/   \_\_|
  *
  */
 
@@ -340,11 +324,11 @@ static void on_pat(void *arg, mpegts_psi_t *psi)
 }
 
 /*
- *   oooooooo8     o   ooooooooooo
- * o888     88    888  88  888  88
- * 888           8  88     888
- * 888o     oo  8oooo88    888
- *  888oooo88 o88o  o888o o888o
+ *   ____    _  _____
+ *  / ___|  / \|_   _|
+ * | |     / _ \ | |
+ * | |___ / ___ \| |
+ *  \____/_/   \_\_|
  *
  */
 
@@ -372,7 +356,7 @@ static bool __cat_check_desc(module_data_t *mod, const uint8_t *desc)
 
     if(   mod->__decrypt.cas
        && DESC_CA_CAID(desc) == mod->caid
-       && module_cas_check_descriptor(mod->__decrypt.cas, desc))
+       && module_cas_check_cat_desc(mod->__decrypt.cas, desc))
     {
         mod->stream[pid]->type = MPEGTS_PACKET_EMM;
         asc_log_info(MSG("Select EMM pid:%d"), pid);
@@ -425,11 +409,11 @@ static void on_cat(void *arg, mpegts_psi_t *psi)
 }
 
 /*
- * oooooooooo oooo     oooo ooooooooooo
- *  888    888 8888o   888  88  888  88
- *  888oooo88  88 888o8 88      888
- *  888        88  888  88      888
- * o888o      o88o  8  o88o    o888o
+ *  ____  __  __ _____
+ * |  _ \|  \/  |_   _|
+ * | |_) | |\/| | | |
+ * |  __/| |  | | | |
+ * |_|   |_|  |_| |_|
  *
  */
 
@@ -459,7 +443,7 @@ static ca_stream_t * __pmt_check_desc(  module_data_t *mod
         {
             if(DESC_CA_CAID(desc) != mod->caid)
                 break;
-            if(!module_cas_check_descriptor(mod->__decrypt.cas, desc))
+            if(!module_cas_check_pmt_desc(mod->__decrypt.cas, desc))
                 break;
         }
         else
@@ -579,9 +563,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             }
             else
             {
-                const uint8_t size = desc_pointer[1] + 2;
-                memcpy(&mod->pmt->buffer[skip], desc_pointer, size);
-                skip += size;
+                const uint8_t desc_size = desc_pointer[1] + 2;
+                memcpy(&mod->pmt->buffer[skip], desc_pointer, desc_size);
+                skip += desc_size;
             }
         }
 
@@ -593,9 +577,9 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
             asc_list_insert_tail(mod->el_list, el_stream);
         }
 
-        const uint16_t size = skip - skip_last;
-        mod->pmt->buffer[skip_last - 2] = (size << 8) & 0x0F;
-        mod->pmt->buffer[skip_last - 1] = size & 0xFF;
+        const uint16_t items_size = skip - skip_last;
+        mod->pmt->buffer[skip_last - 2] = (items_size << 8) & 0x0F;
+        mod->pmt->buffer[skip_last - 1] = items_size & 0xFF;
     }
 
     mod->pmt->buffer_size = skip + CRC32_SIZE;
@@ -608,11 +592,11 @@ static void on_pmt(void *arg, mpegts_psi_t *psi)
 }
 
 /*
- * ooooooooooo oooo     oooo
- *  888    88   8888o   888
- *  888ooo8     88 888o8 88
- *  888    oo   88  888  88
- * o888ooo8888 o88o  8  o88o
+ *  _____ ____ __  __      __  _____ __  __ __  __
+ * | ____/ ___|  \/  |    / / | ____|  \/  |  \/  |
+ * |  _|| |   | |\/| |   / /  |  _| | |\/| | |\/| |
+ * | |__| |___| |  | |  / /   | |___| |  | | |  | |
+ * |_____\____|_|  |_| /_/    |_____|_|  |_|_|  |_|
  *
  */
 
@@ -633,7 +617,7 @@ static void on_em(void *arg, mpegts_psi_t *psi)
 
     const uint8_t em_type = psi->buffer[0];
 
-    if(em_type == 0x80 || em_type == 0x81)
+    if(IS_ECM(psi->buffer))
     { /* ECM */
         asc_list_for(mod->ca_list)
         {
@@ -677,11 +661,11 @@ static void on_em(void *arg, mpegts_psi_t *psi)
 }
 
 /*
- * ooooooooooo  oooooooo8
- * 88  888  88 888
- *     888      888oooooo
- *     888             888
- *    o888o    o88oooo888
+ *  _____ ____
+ * |_   _/ ___|
+ *   | | \___ \
+ *   | |  ___) |
+ *   |_| |____/
  *
  */
 
@@ -691,49 +675,42 @@ static void decrypt(module_data_t *mod)
     {
         ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
 
-        if(ca_stream->batch_skip > 0)
+        if(ca_stream->csa.batch_skip > 0)
         {
-
-#if FFDECSA == 1
-
-            ca_stream->batch[ca_stream->batch_skip] = NULL;
-
-            size_t i = 0, i_size = ca_stream->batch_skip / 2;
-            while(i < i_size)
-                i += decrypt_packets(ca_stream->keys, ca_stream->batch);
-
-#elif LIBDVBCSA == 1
-
-            ca_stream->batch[ca_stream->batch_skip].data = NULL;
+#ifdef HAVE_LIBDVBCSA
+            ca_stream->csa.batch[ca_stream->csa.batch_skip].data = NULL;
 
             if(ca_stream->parity == 0x80)
-                dvbcsa_bs_decrypt(ca_stream->even_key, ca_stream->batch, TS_BODY_SIZE);
+                dvbcsa_bs_decrypt(ca_stream->csa.even_key, ca_stream->csa.batch, TS_BODY_SIZE);
             else if(ca_stream->parity == 0xC0)
-                dvbcsa_bs_decrypt(ca_stream->odd_key, ca_stream->batch, TS_BODY_SIZE);
+                dvbcsa_bs_decrypt(ca_stream->csa.odd_key, ca_stream->csa.batch, TS_BODY_SIZE);
+#else
+            ca_stream->csa.batch[ca_stream->csa.batch_skip] = NULL;
 
+            size_t i = 0, i_size = ca_stream->csa.batch_skip / 2;
+            while(i < i_size)
+                i += decrypt_packets(ca_stream->csa.keys, ca_stream->csa.batch);
 #endif
 
-            ca_stream->batch_skip = 0;
+            ca_stream->csa.batch_skip = 0;
         }
 
         // check new key
-        switch(ca_stream->new_key_id)
+        switch(ca_stream->current_key)
         {
             case 0:
                 break;
             case 1:
-                ca_stream_set_keys(ca_stream, &ca_stream->new_key[0], NULL);
-                ca_stream->new_key_id = 0;
+                ca_stream_set_keys(ca_stream, ca_stream->keys[0].a, NULL);
+                ca_stream->current_key = 0;
                 break;
             case 2:
-                ca_stream_set_keys(ca_stream, NULL, &ca_stream->new_key[8]);
-                ca_stream->new_key_id = 0;
+                ca_stream_set_keys(ca_stream, NULL, ca_stream->keys[1].a);
+                ca_stream->current_key = 0;
                 break;
             case 3:
-                ca_stream_set_keys(  ca_stream
-                                   , &ca_stream->new_key[0]
-                                   , &ca_stream->new_key[8]);
-                ca_stream->new_key_id = 0;
+                ca_stream_set_keys(ca_stream, ca_stream->keys[0].a, ca_stream->keys[1].a);
+                ca_stream->current_key = 0;
                 break;
         }
     }
@@ -776,7 +753,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         }
     }
 
-    if(asc_list_size(mod->ca_list) == 0)
+    if(asc_list_size(mod->ca_list) == 0 || mod->no_decrypt)
     {
         module_stream_send(mod, ts);
         return;
@@ -808,20 +785,7 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
         mod->storage.write = 0;
     mod->storage.count += TS_PACKET_SIZE;
 
-#if FFDECSA == 1
-
-    asc_list_first(mod->ca_list);
-    ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
-
-    ca_stream->batch[ca_stream->batch_skip    ] = dst;
-    ca_stream->batch[ca_stream->batch_skip + 1] = dst + TS_PACKET_SIZE;
-    ca_stream->batch_skip += 2;
-
-    if(ca_stream->batch_skip >= mod->batch_size * 2)
-        decrypt(mod);
-
-#elif LIBDVBCSA == 1
-
+#ifdef HAVE_LIBDVBCSA
     const uint8_t sc = TS_IS_SCRAMBLED(dst);
     if(sc)
     {
@@ -862,15 +826,24 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
                 ca_stream->parity = sc;
             }
 
-            ca_stream->batch[ca_stream->batch_skip].data = &dst[hdr_size];
-            ca_stream->batch[ca_stream->batch_skip].len = TS_PACKET_SIZE - hdr_size;
-            ++ca_stream->batch_skip;
+            ca_stream->csa.batch[ca_stream->csa.batch_skip].data = &dst[hdr_size];
+            ca_stream->csa.batch[ca_stream->csa.batch_skip].len = TS_PACKET_SIZE - hdr_size;
+            ca_stream->csa.batch_skip += 1;
 
-            if(ca_stream->batch_skip >= mod->batch_size)
+            if(ca_stream->csa.batch_skip >= mod->batch_size)
                 decrypt(mod);
         }
     }
+#else
+    asc_list_first(mod->ca_list);
+    ca_stream_t *ca_stream = asc_list_data(mod->ca_list);
 
+    ca_stream->csa.batch[ca_stream->csa.batch_skip    ] = dst;
+    ca_stream->csa.batch[ca_stream->csa.batch_skip + 1] = dst + TS_PACKET_SIZE;
+    ca_stream->csa.batch_skip += 2;
+
+    if(ca_stream->csa.batch_skip >= mod->batch_size * 2)
+        decrypt(mod);
 #endif
 
     if(mod->storage.count >= mod->storage.size)
@@ -888,11 +861,11 @@ static void on_ts(module_data_t *mod, const uint8_t *ts)
 }
 
 /*
- *      o      oooooooooo ooooo
- *     888      888    888 888
- *    8  88     888oooo88  888
- *   8oooo88    888        888
- * o88o  o888o o888o      o888o
+ *     _    ____ ___
+ *    / \  |  _ \_ _|
+ *   / _ \ | |_) | |
+ *  / ___ \|  __/| |
+ * /_/   \_\_|  |___|
  *
  */
 
@@ -921,7 +894,7 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
     if(asc_list_eol(mod->ca_list))
         return;
 
-    if((data[0] & ~0x01) != 0x80)
+    if(!IS_ECM(data))
         return; /* Skip EMM */
 
     if(!mod->__decrypt.cas)
@@ -949,21 +922,26 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
 
     if(is_keys_ok)
     {
+        csa_key_t key_0, key_1;
+        memcpy(key_0.a, &data[3], CSA_KEY_SIZE);
+        memcpy(key_1.a, &data[11], CSA_KEY_SIZE);
+
         // Set keys
-        if(ca_stream->new_key[11] == data[14] && ca_stream->new_key[15] == data[18])
+        if(key_0.l == 0 || key_0.l == ca_stream->keys[0].l)
         {
-            ca_stream->new_key_id = 1;
-            memcpy(&ca_stream->new_key[0], &data[3], 8);
+            ca_stream->keys[1].l = key_1.l;
+            ca_stream->current_key = 2;
         }
-        else if(ca_stream->new_key[3] == data[6] && ca_stream->new_key[7] == data[10])
+        else if(key_1.l == 0 || key_1.l == ca_stream->keys[1].l)
         {
-            ca_stream->new_key_id = 2;
-            memcpy(&ca_stream->new_key[8], &data[11], 8);
+            ca_stream->keys[0].l = key_0.l;
+            ca_stream->current_key = 1;
         }
         else
         {
-            ca_stream->new_key_id = 3;
-            memcpy(ca_stream->new_key, &data[3], 16);
+            ca_stream->keys[0].l = key_0.l;
+            ca_stream->keys[1].l = key_1.l;
+            ca_stream->current_key = 3;
             if(ca_stream->is_keys)
                 asc_log_warning(MSG("Both keys changed"));
             else
@@ -972,29 +950,29 @@ void on_cam_response(module_data_t *mod, void *arg, const uint8_t *data)
 
         if(asc_log_is_debug())
         {
-            char key_1[17], key_2[17];
-            hex_to_str(key_1, &data[3], 8);
-            hex_to_str(key_2, &data[11], 8);
+            char str_key_0[17], str_key_1[17];
+            hex_to_str(str_key_0, &data[3], 8);
+            hex_to_str(str_key_1, &data[11], 8);
             const uint64_t responsetime = (asc_utime() - ca_stream->sendtime) / 1000;
-            asc_log_debug(  MSG("ECM Found id:0x%02X time:%"PRIu64"ms key:%s:%s")
-                          , data[0], responsetime, key_1, key_2);
+            asc_log_debug(  MSG("ECM Found id:0x%02X time:%llums key:%s:%s")
+                          , data[0], responsetime, str_key_0, str_key_1);
         }
 
     }
     else
     {
         const uint64_t responsetime = (asc_utime() - ca_stream->sendtime) / 1000;
-        asc_log_error(  MSG("ECM Not Found id:0x%02X time:%"PRIu64"ms size:%d")
+        asc_log_error(  MSG("ECM Not Found id:0x%02X time:%llums size:%d")
                       , data[0], responsetime, data[2]);
     }
 }
 
 /*
- * oooo     oooo  ooooooo  ooooooooo  ooooo  oooo ooooo       ooooooooooo
- *  8888o   888 o888   888o 888    88o 888    88   888         888    88
- *  88 888o8 88 888     888 888    888 888    88   888         888ooo8
- *  88  888  88 888o   o888 888    888 888    88   888      o  888    oo
- * o88o  8  o88o  88ooo88  o888ooo88    888oo88   o888ooooo88 o888ooo8888
+ *  __  __           _       _
+ * |  \/  | ___   __| |_   _| | ___
+ * | |\/| |/ _ \ / _` | | | | |/ _ \
+ * | |  | | (_) | (_| | |_| | |  __/
+ * |_|  |_|\___/ \__,_|\__,_|_|\___|
  *
  */
 
@@ -1013,14 +991,10 @@ static void module_init(module_data_t *mod)
     mod->ca_list = asc_list_init();
     mod->el_list = asc_list_init();
 
-#if FFDECSA == 1
-
-    mod->batch_size = get_suggested_cluster_size();
-
-#elif LIBDVBCSA == 1
-
+#ifdef HAVE_LIBDVBCSA
     mod->batch_size = dvbcsa_bs_batch_size();
-
+#else
+    mod->batch_size = get_suggested_cluster_size();
 #endif
 
     mod->storage.size = mod->batch_size * 4 * TS_PACKET_SIZE;
@@ -1080,6 +1054,8 @@ static void module_init(module_data_t *mod)
         mod->shift.buffer = malloc(mod->shift.size);
     }
 
+    module_option_boolean("no_decrypt", &mod->no_decrypt);
+
     stream_reload(mod);
 }
 
@@ -1120,6 +1096,19 @@ static void module_destroy(module_data_t *mod)
         }
     }
     mpegts_psi_destroy(mod->pmt);
+}
+
+static const char * module_name(void)
+{
+#if defined(HAVE_FFDECSA)
+#   define _MODULE_NAME "ffdecsa"
+#elif defined(HAVE_LIBDVBCSA)
+#   define _MODULE_NAME "libdvbcsa"
+#else
+#   define _MODULE_NAME "ERR"
+#endif
+
+    return "softcam/decrypt [" _MODULE_NAME "]";
 }
 
 MODULE_STREAM_METHODS()

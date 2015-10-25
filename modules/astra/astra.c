@@ -2,7 +2,7 @@
  * Astra Module: Base
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
  *      astra.debug - boolean, is a debug version
  *
  * Methods:
+ *      astra.info()
+ *                  - print information about modules
  *      astra.abort()
  *                  - abort execution
  *      astra.exit()
@@ -34,35 +36,111 @@
  */
 
 #include <astra.h>
-
-static int _astra_exit(lua_State *L)
-{
-    __uarg(L);
-    astra_exit();
-    return 0;
-}
+#include <modules.h>
 
 static int _astra_abort(lua_State *L)
 {
     __uarg(L);
-    astra_abort();
+    asc_abort();
     return 0;
 }
 
-static int _astra_reload(lua_State *L)
+static int _astra_info(lua_State *L)
 {
-    __uarg(L);
-    astra_reload();
-    return 0;
+    lua_newtable(L);
+
+    // System
+    lua_newtable(L);
+
+    lua_pushstring(L, ASTRA_VERSION_STR);
+    lua_setfield(L, -2, "version");
+
+    lua_pushstring(L, APP_OS);
+    lua_setfield(L, -2, "os");
+
+    lua_pushstring(L, LUA_VERSION_MAJOR "." LUA_VERSION_MINOR "." LUA_VERSION_RELEASE);
+    lua_setfield(L, -2, "lua");
+
+#ifdef APP_SSE
+    lua_pushboolean(L, true);
+#else
+    lua_pushboolean(L, false);
+#endif
+    lua_setfield(L, -2, "sse");
+
+#if defined(__i386__) || defined(__x86_64__)
+    unsigned int eax, ebx, ecx, edx;
+    __asm__ __volatile__ (  "cpuid"
+                          : "=a" (eax)
+                          , "=b" (ebx)
+                          , "=c" (ecx)
+                          , "=d" (edx)
+                          : "a"  (1));
+
+    char cpuid[128];
+
+#   if defined(__i386__)
+    const int bits = 32;
+#   else
+    const int bits = 64;
+#   endif
+
+    sprintf(cpuid, "x86 %dbit 0x%08X 0x%08X 0x%08X 0x%08X", bits, eax, ebx, ecx, edx);
+    lua_pushstring(L, cpuid);
+    lua_setfield(L, -2, "cpu");
+
+#elif defined(__arm__)
+    lua_pushstring(L, "arm");
+    lua_setfield(L, -2, "cpu");
+
+#elif defined(__mips__)
+    lua_pushstring(L, "mips");
+    lua_setfield(L, -2, "cpu");
+
+#else
+    lua_pushstring(L, "unknown");
+    lua_setfield(L, -2, "cpu");
+
+#endif
+
+#if defined(WITH_POLL)
+    lua_pushstring(L, "poll");
+#elif defined(WITH_SELECT)
+    lua_pushstring(L, "select");
+#elif defined(WITH_KQUEUE)
+    lua_pushstring(L, "kqueue");
+#elif defined(WITH_EPOLL)
+    lua_pushstring(L, "epoll");
+#else
+#   error "event"
+#endif
+    lua_setfield(L, -2, "event");
+
+    lua_setfield(L, -2, "system");
+
+    lua_newtable(L);
+    for(unsigned int i = 0; i < ASC_ARRAY_SIZE(asc_modules); ++i)
+    {
+        const asc_module_t *m = asc_modules[i];
+        if(m->name)
+        {
+            const int item_count = luaL_len(lua, -1) + 1;
+            lua_pushinteger(lua, item_count);
+            lua_pushstring(L, m->name());
+            lua_settable(lua, -3);
+        }
+    }
+    lua_setfield(L, -2, "modules");
+
+    return 1;
 }
 
-LUA_API int luaopen_astra(lua_State *L)
+static int __module_open(lua_State *L)
 {
     static luaL_Reg astra_api[] =
     {
-        { "exit", _astra_exit },
         { "abort", _astra_abort },
-        { "reload", _astra_reload },
+        { "info", _astra_info },
         { NULL, NULL }
     };
 
@@ -85,3 +163,9 @@ LUA_API int luaopen_astra(lua_State *L)
 
     return 1;
 }
+
+const asc_module_t asc_module_astra =
+{
+    .open = __module_open,
+    .name = NULL,
+};

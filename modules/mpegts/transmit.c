@@ -55,6 +55,11 @@ static void module_destroy(module_data_t *mod)
     module_stream_destroy(mod);
 }
 
+static const char * module_name(void)
+{
+    return "mpegts/transmit";
+}
+
 MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {

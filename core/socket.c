@@ -92,6 +92,24 @@ void asc_socket_core_destroy(void)
 #endif
 }
 
+int asc_socket_errno(void)
+{
+#ifdef _WIN32
+    const int err = WSAGetLastError();
+    switch(err)
+    {
+        case WSAEWOULDBLOCK:
+            return EAGAIN;
+        case WSAEINTR:
+            return EINTR;
+        default:
+            return err;
+    }
+#else
+    return errno;
+#endif
+}
+
 const char * asc_socket_error(void)
 {
     static char buffer[1024];
@@ -117,12 +135,12 @@ const char * asc_socket_error(void)
 }
 
 /*
- *   ooooooo  oooooooooo ooooooooooo oooo   oooo
- * o888   888o 888    888 888    88   8888o  88
- * 888     888 888oooo88  888ooo8     88 888o88
- * 888o   o888 888        888    oo   88   8888
- *   88ooo88  o888o      o888ooo8888 o88o    88
- *
+ *   ___
+ *  / _ \ _ __   ___ _ __
+ * | | | | '_ \ / _ \ '_ \
+ * | |_| | |_) |  __/ | | |
+ *  \___/| .__/ \___|_| |_|
+ *       |_|
  */
 
 static asc_socket_t * __socket_open(int family, int type, int protocol, void * arg)
@@ -156,7 +174,7 @@ asc_socket_t * asc_socket_open_sctp4(void * arg)
 #ifndef IPPROTO_SCTP
     __uarg(arg);
     asc_log_error("[core/socket] SCTP protocol is not available");
-    astra_abort();
+    asc_abort();
     return NULL;
 #else
     return __socket_open(PF_INET, SOCK_STREAM, IPPROTO_SCTP, arg);
@@ -164,11 +182,11 @@ asc_socket_t * asc_socket_open_sctp4(void * arg)
 }
 
 /*
- *   oooooooo8 ooooo         ooooooo    oooooooo8 ooooooooooo
- * o888     88  888        o888   888o 888         888    88
- * 888          888        888     888  888oooooo  888ooo8
- * 888o     oo  888      o 888o   o888         888 888    oo
- *  888oooo88  o888ooooo88   88ooo88   o88oooo888 o888ooo8888
+ *   ____ _
+ *  / ___| | ___  ___  ___
+ * | |   | |/ _ \/ __|/ _ \
+ * | |___| | (_) \__ \  __/
+ *  \____|_|\___/|___/\___|
  *
  */
 
@@ -208,11 +226,11 @@ void asc_socket_close(asc_socket_t *sock)
 }
 
 /*
- * ooooooooooo ooooo  oooo ooooooooooo oooo   oooo ooooooooooo
- *  888    88   888    88   888    88   8888o  88  88  888  88
- *  888ooo8      888  88    888ooo8     88 888o88      888
- *  888    oo     88888     888    oo   88   8888      888
- * o888ooo8888     888     o888ooo8888 o88o    88     o888o
+ *  _____                 _
+ * | ____|_   _____ _ __ | |_
+ * |  _| \ \ / / _ \ '_ \| __|
+ * | |___ \ V /  __/ | | | |_
+ * |_____| \_/ \___|_| |_|\__|
  *
  */
 
@@ -322,11 +340,11 @@ void asc_socket_set_on_close(asc_socket_t *sock, event_callback_t on_close)
 }
 
 /*
- * oooooooooo ooooo oooo   oooo ooooooooo
- *  888    888 888   8888o  88   888    88o
- *  888oooo88  888   88 888o88   888    888
- *  888    888 888   88   8888   888    888
- * o888ooo888 o888o o88o    88  o888ooo88
+ *  ____  _           _
+ * | __ )(_)_ __   __| |
+ * |  _ \| | '_ \ / _` |
+ * | |_) | | | | | (_| |
+ * |____/|_|_| |_|\__,_|
  *
  */
 
@@ -358,11 +376,11 @@ bool asc_socket_bind(asc_socket_t *sock, const char *addr, int port)
 }
 
 /*
- * ooooo       ooooo  oooooooo8 ooooooooooo ooooooooooo oooo   oooo
- *  888         888  888        88  888  88  888    88   8888o  88
- *  888         888   888oooooo     888      888ooo8     88 888o88
- *  888      o  888          888    888      888    oo   88   8888
- * o888ooooo88 o888o o88oooo888    o888o    o888ooo8888 o88o    88
+ *  _     _     _
+ * | |   (_)___| |_ ___ _ __
+ * | |   | / __| __/ _ \ '_ \
+ * | |___| \__ \ ||  __/ | | |
+ * |_____|_|___/\__\___|_| |_|
  *
  */
 
@@ -391,12 +409,12 @@ void asc_socket_listen(  asc_socket_t *sock
 }
 
 /*
- *      o       oooooooo8   oooooooo8 ooooooooooo oooooooooo  ooooooooooo
- *     888    o888     88 o888     88  888    88   888    888 88  888  88
- *    8  88   888         888          888ooo8     888oooo88      888
- *   8oooo88  888o     oo 888o     oo  888    oo   888            888
- * o88o  o888o 888oooo88   888oooo88  o888ooo8888 o888o          o888o
- *
+ *     _                      _
+ *    / \   ___ ___ ___ _ __ | |_
+ *   / _ \ / __/ __/ _ \ '_ \| __|
+ *  / ___ \ (_| (_|  __/ |_) | |_
+ * /_/   \_\___\___\___| .__/ \__|
+ *                     |_|
  */
 
 bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void * arg)
@@ -420,11 +438,11 @@ bool asc_socket_accept(asc_socket_t *sock, asc_socket_t **client_ptr, void * arg
 }
 
 /*
- *   oooooooo8   ooooooo  oooo   oooo oooo   oooo ooooooooooo  oooooooo8 ooooooooooo
- * o888     88 o888   888o 8888o  88   8888o  88   888    88 o888     88 88  888  88
- * 888         888     888 88 888o88   88 888o88   888ooo8   888             888
- * 888o     oo 888o   o888 88   8888   88   8888   888    oo 888o     oo     888
- *  888oooo88    88ooo88  o88o    88  o88o    88  o888ooo8888 888oooo88     o888o
+ *   ____                            _
+ *  / ___|___  _ __  _ __   ___  ___| |_
+ * | |   / _ \| '_ \| '_ \ / _ \/ __| __|
+ * | |__| (_) | | | | | | |  __/ (__| |_
+ *  \____\___/|_| |_|_| |_|\___|\___|\__|
  *
  */
 
@@ -503,19 +521,21 @@ void asc_socket_connect(  asc_socket_t *sock, const char *addr, int port
 }
 
 /*
- * oooooooooo  ooooooooooo  oooooooo8 ooooo  oooo
- *  888    888  888    88 o888     88  888    88
- *  888oooo88   888ooo8   888           888  88
- *  888  88o    888    oo 888o     oo    88888
- * o888o  88o8 o888ooo8888 888oooo88      888
+ *  ____
+ * |  _ \ ___  _____   __
+ * | |_) / _ \/ __\ \ / /
+ * |  _ <  __/ (__ \ V /
+ * |_| \_\___|\___| \_/
  *
  */
 
+__asc_inline
 ssize_t asc_socket_recv(asc_socket_t *sock, void *buffer, size_t size)
 {
     return recv(sock->fd, buffer, size, 0);
 }
 
+__asc_inline
 ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 {
     socklen_t slen = sizeof(struct sockaddr_in);
@@ -523,31 +543,21 @@ ssize_t asc_socket_recvfrom(asc_socket_t *sock, void *buffer, size_t size)
 }
 
 /*
- *  oooooooo8 ooooooooooo oooo   oooo ooooooooo
- * 888         888    88   8888o  88   888    88o
- *  888oooooo  888ooo8     88 888o88   888    888
- *         888 888    oo   88   8888   888    888
- * o88oooo888 o888ooo8888 o88o    88  o888ooo88
+ *  ____                 _
+ * / ___|  ___ _ __   __| |
+ * \___ \ / _ \ '_ \ / _` |
+ *  ___) |  __/ | | | (_| |
+ * |____/ \___|_| |_|\__,_|
  *
  */
 
+__asc_inline
 ssize_t asc_socket_send(asc_socket_t *sock, const void *buffer, size_t size)
 {
-    const ssize_t ret = send(sock->fd, buffer, size, 0);
-    if(ret == -1)
-    {
-#ifdef _WIN32
-        const int err = WSAGetLastError();
-        if(err == WSAEWOULDBLOCK)
-            return 0;
-#else
-        if(errno == EAGAIN || errno == EWOULDBLOCK)
-            return 0;
-#endif
-    }
-    return ret;
+    return send(sock->fd, buffer, size, 0);
 }
 
+__asc_inline
 ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
 {
     const socklen_t slen = sizeof(struct sockaddr_in);
@@ -555,11 +565,11 @@ ssize_t asc_socket_sendto(asc_socket_t *sock, const void *buffer, size_t size)
 }
 
 /*
- * ooooo oooo   oooo ooooooooooo  ooooooo
- *  888   8888o  88   888    88 o888   888o
- *  888   88 888o88   888ooo8   888     888
- *  888   88   8888   888       888o   o888
- * o888o o88o    88  o888o        88ooo88
+ *  ___        __
+ * |_ _|_ __  / _| ___
+ *  | || '_ \| |_ / _ \
+ *  | || | | |  _| (_) |
+ * |___|_| |_|_|  \___/
  *
  */
 
@@ -587,11 +597,11 @@ int asc_socket_port(asc_socket_t *sock)
 }
 
 /*
- *  oooooooo8 ooooooooooo ooooooooooo          oo    oo
- * 888         888    88  88  888  88           88oo88
- *  888oooooo  888ooo8        888     ooooooo o88888888o
- *         888 888    oo      888               oo88oo
- * o88oooo888 o888ooo8888    o888o             o88  88o
+ *  ____       _
+ * / ___|  ___| |_     __/\__
+ * \___ \ / _ \ __|____\ /\ /
+ *  ___) |  __/ ||_____/_\/_\
+ * |____/ \___|\__|      \/
  *
  */
 
@@ -618,7 +628,7 @@ void asc_socket_set_nonblock(asc_socket_t *sock, bool is_nonblock)
 #endif
     {
         asc_log_error(MSG("failed to set NONBLOCK [%s]"), asc_socket_error());
-        astra_abort();
+        asc_abort();
     }
 }
 
@@ -714,25 +724,33 @@ void asc_socket_set_buffer(asc_socket_t *sock, int rcvbuf, int sndbuf)
 {
 #if defined(SO_RCVBUF) && defined(SO_SNDBUF)
     if(rcvbuf > 0 && !_socket_set_buffer(sock->fd, SO_RCVBUF, rcvbuf))
-    {
-        asc_log_error(MSG("failed to set rcvbuf %d (%s)"), rcvbuf, asc_socket_error());
-    }
+        asc_log_error(MSG("failed to set rcvbuf \"%d\" (%s)"), rcvbuf, asc_socket_error());
 
     if(sndbuf > 0 && !_socket_set_buffer(sock->fd, SO_SNDBUF, sndbuf))
-    {
-        asc_log_error(MSG("failed to set sndbuf %d (%s)"), sndbuf, asc_socket_error());
-    }
+        asc_log_error(MSG("failed to set sndbuf \"%d\" (%s)"), sndbuf, asc_socket_error());
+
 #else
 #   warning "RCVBUF/SNDBUF is not defined"
 #endif
 }
 
+void asc_socket_set_congestion(asc_socket_t *sock, const char *alg)
+{
+    int ret = -1;
+#ifdef TCP_CONGESTION
+    if(sock->protocol == IPPROTO_TCP)
+        ret = setsockopt(sock->fd, SOL_TCP, TCP_CONGESTION, alg, strlen(alg));
+#endif
+    if(ret == -1)
+        asc_log_error(MSG("false to set congestion algorithm \"%s\""), alg);
+}
+
 /*
- * oooo     oooo       oooooooo8     o       oooooooo8 ooooooooooo
- *  8888o   888      o888     88    888     888        88  888  88
- *  88 888o8 88      888           8  88     888oooooo     888
- *  88  888  88  ooo 888o     oo  8oooo88           888    888
- * o88o  8  o88o 888  888oooo88 o88o  o888o o88oooo888    o888o
+ *  __  __       _ _   _               _
+ * |  \/  |_   _| | |_(_) ___ __ _ ___| |_
+ * | |\/| | | | | | __| |/ __/ _` / __| __|
+ * | |  | | |_| | | |_| | (_| (_| \__ \ |_
+ * |_|  |_|\__,_|_|\__|_|\___\__,_|___/\__|
  *
  */
 

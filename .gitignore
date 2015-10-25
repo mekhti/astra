@@ -5,7 +5,7 @@
 /temp
 /Makefile
 /config.h
+/modules.h
 *.sublime-workspace
 /modules/inscript/inscript.h
 /contrib/build
-

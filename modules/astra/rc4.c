@@ -10,13 +10,6 @@
 
 #include <astra.h>
 
-typedef struct
-{
-    uint8_t perm[256];
-    uint8_t index1;
-    uint8_t index2;
-} rc4_ctx_t;
-
 __asc_inline
 void rc4_swap_bytes(uint8_t *a, uint8_t *b)
 {
@@ -26,7 +19,7 @@ void rc4_swap_bytes(uint8_t *a, uint8_t *b)
     *b = temp;
 }
 
-static void rc4_init(rc4_ctx_t *state, const uint8_t *key, int keylen)
+void rc4_init(rc4_ctx_t *state, const uint8_t *key, int keylen)
 {
     uint8_t j;
     int i;
@@ -44,7 +37,7 @@ static void rc4_init(rc4_ctx_t *state, const uint8_t *key, int keylen)
     }
 }
 
-static void rc4_crypt(rc4_ctx_t *state, uint8_t *dst, const uint8_t *buf, int buflen)
+void rc4_crypt(rc4_ctx_t *state, uint8_t *dst, const uint8_t *buf, int buflen)
 {
     int i;
     uint8_t j;
@@ -83,7 +76,7 @@ static int lua_rc4(lua_State *L)
     return 1;
 }
 
-LUA_API int luaopen_rc4(lua_State *L)
+static int __module_open(lua_State *L)
 {
     lua_getglobal(L, "string");
 
@@ -94,3 +87,14 @@ LUA_API int luaopen_rc4(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/rc4";
+}
+
+const asc_module_t asc_module_rc4 =
+{
+    .open = __module_open,
+    .name = module_name,
+};

@@ -2,7 +2,7 @@
  * Astra Module: Str2Hex
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,8 @@
 /*
  *      (string):hex()
  *                  - dump data in hex
+ *      (string):bin()
+ *                  - convert string into hex
  */
 
 #include <astra.h>
@@ -93,7 +95,7 @@ static int lua_bin(lua_State *L)
     return 1;
 }
 
-LUA_API int luaopen_str2hex(lua_State *L)
+static int __module_open(lua_State *L)
 {
     lua_getglobal(L, "string");
 
@@ -106,3 +108,14 @@ LUA_API int luaopen_str2hex(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/str2hex";
+}
+
+const asc_module_t asc_module_str2hex =
+{
+    .open = __module_open,
+    .name = module_name,
+};

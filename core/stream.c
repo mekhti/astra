@@ -61,12 +61,10 @@ void __module_stream_destroy(module_stream_t *stream)
     if(stream->parent)
         __module_stream_detach(stream->parent, stream);
 
-    asc_list_first(stream->childs);
-    while(!asc_list_eol(stream->childs))
+    asc_list_clear(stream->childs)
     {
         module_stream_t *i = (module_stream_t *)asc_list_data(stream->childs);
         i->parent = NULL;
-        asc_list_remove_current(stream->childs);
     }
     asc_list_destroy(stream->childs);
     stream->childs = NULL;

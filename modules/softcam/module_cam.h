@@ -2,7 +2,7 @@
  * Astra Module: SoftCAM
  * http://cesbo.com/astra
  *
- * Copyright (C) 2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2013-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,12 +31,14 @@ typedef struct module_cas_t module_cas_t;
 
 typedef struct em_packet_t em_packet_t;
 
+#define IS_ECM(_buffer) (((_buffer)[0] & (~0x01)) == 0x80)
+
 /*
- * oooooooooo   o       oooooooo8 oooo   oooo ooooooooooo ooooooooooo
- *  888    888 888    o888     88  888  o88    888    88  88  888  88
- *  888oooo88 8  88   888          888888      888ooo8        888
- *  888      8oooo88  888o     oo  888  88o    888    oo      888
- * o888o   o88o  o888o 888oooo88  o888o o888o o888ooo8888    o888o
+ *  ____            _        _
+ * |  _ \ __ _  ___| | _____| |_
+ * | |_) / _` |/ __| |/ / _ \ __|
+ * |  __/ (_| | (__|   <  __/ |_
+ * |_|   \__,_|\___|_|\_\___|\__|
  *
  */
 
@@ -50,11 +52,11 @@ struct em_packet_t
 };
 
 /*
- *   oooooooo8     o      oooo     oooo
- * o888     88    888      8888o   888
- * 888           8  88     88 888o8 88
- * 888o     oo  8oooo88    88  888  88
- *  888oooo88 o88o  o888o o88o  8  o88o
+ *   ____    _    __  __
+ *  / ___|  / \  |  \/  |
+ * | |     / _ \ | |\/| |
+ * | |___ / ___ \| |  | |
+ *  \____/_/   \_\_|  |_|
  *
  */
 
@@ -65,6 +67,7 @@ struct module_cam_t
     bool is_ready;
 
     uint16_t caid;
+    bool au;
     uint8_t ua[8];
     bool disable_emm;
 
@@ -104,12 +107,7 @@ void module_cam_queue_flush(module_cam_t *cam, module_decrypt_t *decrypt);
 #define module_cam_destroy(_mod)                                                                \
     {                                                                                           \
         module_cam_reset(&_mod->__cam);                                                         \
-        for(  asc_list_first(_mod->__cam.decrypt_list)                                          \
-            ; !asc_list_eol(_mod->__cam.decrypt_list)                                           \
-            ; asc_list_first(_mod->__cam.decrypt_list))                                         \
-        {                                                                                       \
-            asc_list_remove_current(_mod->__cam.decrypt_list);                                  \
-        }                                                                                       \
+        asc_list_clear(_mod->__cam.decrypt_list);                                               \
         asc_list_destroy(_mod->__cam.decrypt_list);                                             \
         asc_list_destroy(_mod->__cam.prov_list);                                                \
         asc_list_destroy(_mod->__cam.packet_queue);                                             \
@@ -126,11 +124,11 @@ void module_cam_queue_flush(module_cam_t *cam, module_decrypt_t *decrypt);
     { "cam", module_cam_cam }
 
 /*
- *   oooooooo8     o       oooooooo8
- * o888     88    888     888
- * 888           8  88     888oooooo
- * 888o     oo  8oooo88           888
- *  888oooo88 o88o  o888o o88oooo888
+ *   ____    _    ____
+ *  / ___|  / \  / ___|
+ * | |     / _ \ \___ \
+ * | |___ / ___ \ ___) |
+ *  \____/_/   \_\____/
  *
  */
 
@@ -139,14 +137,16 @@ struct module_cas_t
     module_data_t *self;
     module_decrypt_t *decrypt;
 
-    bool (*check_descriptor)(module_data_t *cas_data, const uint8_t *desc);
+    bool (*check_cat_desc)(module_data_t *cas_data, const uint8_t *desc);
+    bool (*check_pmt_desc)(module_data_t *cas_data, const uint8_t *desc);
     bool (*check_em)(module_data_t *cas_data, mpegts_psi_t *em);
     bool (*check_keys)(module_data_t *cas_data, const uint8_t *keys);
 };
 
 #define MODULE_CAS_DATA() module_cas_t __cas
 
-#define module_cas_check_descriptor(_cas, _desc) _cas->check_descriptor(_cas->self, _desc)
+#define module_cas_check_cat_desc(_cas, _desc) _cas->check_cat_desc(_cas->self, _desc)
+#define module_cas_check_pmt_desc(_cas, _desc) _cas->check_pmt_desc(_cas->self, _desc)
 #define module_cas_check_em(_cas, _em) _cas->check_em(_cas->self, _em)
 #define module_cas_check_keys(_cas, _keys) _cas->check_keys(_cas->self, _keys)
 
@@ -157,19 +157,20 @@ struct module_cas_t
         module_data_t *mod = calloc(1, sizeof(module_data_t));                                  \
         mod->__cas.self = mod;                                                                  \
         mod->__cas.decrypt = decrypt;                                                           \
-        mod->__cas.check_descriptor = cas_check_descriptor;                                     \
+        mod->__cas.check_cat_desc = cas_check_cat_desc;                                         \
+        mod->__cas.check_pmt_desc = cas_check_pmt_desc;                                         \
         mod->__cas.check_em = cas_check_em;                                                     \
         mod->__cas.check_keys = cas_check_keys;                                                 \
         return &mod->__cas;                                                                     \
     }
 
 /*
- * ooooooooo  ooooooooooo  oooooooo8 oooooooooo ooooo  oooo oooooooooo  ooooooooooo
- *  888    88o 888    88 o888     88  888    888  888  88    888    888 88  888  88
- *  888    888 888ooo8   888          888oooo88     888      888oooo88      888
- *  888    888 888    oo 888o     oo  888  88o      888      888            888
- * o888ooo88  o888ooo8888 888oooo88  o888o  88o8   o888o    o888o          o888o
- *
+ *  ____                             _
+ * |  _ \  ___  ___ _ __ _   _ _ __ | |_
+ * | | | |/ _ \/ __| '__| | | | '_ \| __|
+ * | |_| |  __/ (__| |  | |_| | |_) | |_
+ * |____/ \___|\___|_|   \__, | .__/ \__|
+ *                       |___/|_|
  */
 
 struct module_decrypt_t

@@ -30,12 +30,12 @@ uint64_t asc_utime(void)
     if(clock_gettime(CLOCK_MONOTONIC, &ts) == EINVAL)
         (void)clock_gettime(CLOCK_REALTIME, &ts);
 
-    return ((uint64_t)ts.tv_sec * 1000000) + (uint64_t)(ts.tv_nsec / 1000);
+    return ((uint64_t)ts.tv_sec * 1000000ULL) + (uint64_t)(ts.tv_nsec / 1000ULL);
 #else
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
-    return ((uint64_t)tv.tv_sec * 1000000) + (uint64_t)tv.tv_usec;
+    return ((uint64_t)tv.tv_sec * 1000000ULL) + (uint64_t)tv.tv_usec;
 #endif
 }
 
@@ -44,8 +44,8 @@ void asc_usleep(uint64_t usec)
 {
 #ifndef _WIN32
     struct timespec ts;
-    ts.tv_sec = usec / 1000000;
-    ts.tv_nsec = (usec % 1000000) * 1000;
+    ts.tv_sec = usec / 1000000ULL;
+    ts.tv_nsec = (usec % 1000000ULL) * 1000ULL;
     while(nanosleep(&ts, &ts) == -1 && errno == EINTR)
          continue;
 #else

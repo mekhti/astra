@@ -766,10 +766,11 @@ Usage: astra APP [OPTIONS]
 Available Applications:
     --stream            Astra Stream is a main application for
                         the digital television streaming
-    --relay             Astra Relay  is an application for
+    --relay             Astra Relay is an application for
                         the digital television relaying
                         via the HTTP protocol
-    --analyze           Astra Analyze is a MPEG-TS stream analyzer
+    --analyze           MPEG-TS stream analyzer
+    --femon             DVB Signal Status
     --dvbls             DVB Adapters information list
     SCRIPT              launch Astra script
 
@@ -781,6 +782,7 @@ Astra Options:
     --log FILE          write log to file
     --no-stdout         do not print log messages into console
     --color             colored log messages in console
+    --daemon            start as a daemon
     --debug             print debug messages
 ]])
 
@@ -788,11 +790,6 @@ Astra Options:
         print("Application Options:")
         print(_G.options_usage)
     end
-    astra.exit()
-end
-
-function astra_version()
-    log.info("Astra " .. astra.version)
     astra.exit()
 end
 
@@ -806,40 +803,54 @@ astra_options = {
         return 0
     end,
     ["-v"] = function(idx)
-        astra_version()
         return 0
     end,
     ["--version"] = function(idx)
-        astra_version()
         return 0
     end,
     ["--pid"] = function(idx)
-        pidfile(argv[idx + 1])
         return 1
     end,
     ["--syslog"] = function(idx)
-        log.set({ syslog = argv[idx + 1] })
         return 1
     end,
     ["--log"] = function(idx)
-        log.set({ filename = argv[idx + 1] })
         return 1
     end,
     ["--no-stdout"] = function(idx)
-        log.set({ stdout = false })
         return 0
     end,
     ["--color"] = function(udx)
-        log.set({ color = true })
         return 0
     end,
     ["--debug"] = function(idx)
-        log.set({ debug = true })
+        return 0
+    end,
+    ["--daemon"] = function(idx)
         return 0
     end,
 }
 
 function astra_parse_options(idx)
+    -- load modifications
+    local s = package.config:sub(1, 1)
+    local p = nil
+    if s == "/" then
+        p = "/etc/astra/mod"
+    else
+        p = "C:\\astra\\mod"
+    end
+    if utils.stat(p).type == "directory" then
+        local ml = {}
+        for m in utils.readdir(p) do
+            table.insert(ml, m)
+        end
+        table.sort(ml)
+        for _,m in ipairs(ml) do
+            dofile(p .. s .. m)
+        end
+    end
+
     function set_option(idx)
         local a = argv[idx]
         local c = nil

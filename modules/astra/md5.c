@@ -447,7 +447,7 @@ static int lua_md5(lua_State *L)
     return 1;
 }
 
-LUA_API int luaopen_md5(lua_State *L)
+static int __module_open(lua_State *L)
 {
     lua_getglobal(L, "string");
 
@@ -458,3 +458,14 @@ LUA_API int luaopen_md5(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/md5";
+}
+
+const asc_module_t asc_module_md5 =
+{
+    .open = __module_open,
+    .name = module_name,
+};

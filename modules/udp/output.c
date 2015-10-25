@@ -262,7 +262,7 @@ static void thread_loop(void *arg)
             block_time = mpegts_pcr_block_us(&mod->pcr, &pcr);
             if(block_time == 0 || block_time > 500000)
             {
-                asc_log_debug(MSG("block time out of range: %"PRIu64"ms block_size:%lu"),
+                asc_log_debug(MSG("block time out of range: %llums block_size:%lu"),
                     (uint64_t)(block_time / 1000), block_size);
 
                 mod->sync.buffer_count -= block_size;
@@ -331,7 +331,7 @@ static void thread_loop(void *arg)
             system_time = asc_utime();
             if(system_time > block_time_total + 100000)
             {
-                asc_log_warning(MSG("wrong syncing time. -%"PRIu64"ms"),
+                asc_log_warning(MSG("wrong syncing time. -%llums"),
                     (system_time - block_time_total) / 1000);
                 reset = true;
             }
@@ -368,7 +368,7 @@ static void module_init(module_data_t *mod)
     mod->sock = asc_socket_open_udp4(mod);
     asc_socket_set_reuseaddr(mod->sock, 1);
     if(!asc_socket_bind(mod->sock, NULL, 0))
-        astra_abort();
+        asc_abort();
 
     int value;
     if(module_option_number("socket_size", &value))
@@ -429,6 +429,11 @@ static void module_destroy(module_data_t *mod)
         asc_socket_close(mod->sock);
         mod->sock = NULL;
     }
+}
+
+static const char * module_name(void)
+{
+    return "udp_output";
 }
 
 MODULE_STREAM_METHODS()

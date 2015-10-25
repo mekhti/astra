@@ -19,7 +19,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "strbuffer.h"
+#include "strbuf.h"
 #include <stdarg.h>
 
 #define MAX_BUFFER_SIZE 4096
@@ -103,7 +103,7 @@ void string_buffer_addlstring(string_buffer_t *buffer, const char *str, size_t s
     }
 }
 
-void strung_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list ap)
+void string_buffer_addvastring(string_buffer_t *buffer, const char *str, va_list ap)
 {
     string_buffer_t *last;
 
@@ -337,7 +337,7 @@ void string_buffer_addfstring(string_buffer_t *buffer, const char *str, ...)
 {
     va_list ap;
     va_start(ap, str);
-    strung_buffer_addvastring(buffer, str, ap);
+    string_buffer_addvastring(buffer, str, ap);
     va_end(ap);
 }
 
@@ -367,17 +367,10 @@ char * string_buffer_release(string_buffer_t *buffer, size_t *size)
 #ifdef WITH_LUA
 void string_buffer_push(lua_State *L, string_buffer_t *buffer)
 {
-    luaL_Buffer b;
-    luaL_buffinit(L, &b);
-
-    string_buffer_t *next_next;
-    for(string_buffer_t *next = buffer; next && (next_next = next->next, 1); next = next_next)
-    {
-        luaL_addlstring(&b, next->buffer, next->size);
-        free(next);
-    }
-
-    luaL_pushresult(&b);
+    size_t size = 0;
+    char *result = string_buffer_release(buffer, &size);
+    lua_pushlstring(L, result, size);
+    free(result);
 }
 #endif /* WITH_LUA */
 
@@ -385,7 +378,5 @@ void string_buffer_free(string_buffer_t *buffer)
 {
     string_buffer_t *next_next;
     for(string_buffer_t *next = buffer; next && (next_next = next->next, 1); next = next_next)
-    {
         free(next);
-    }
 }

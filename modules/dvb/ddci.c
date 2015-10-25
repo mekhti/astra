@@ -129,7 +129,7 @@ static void sec_open(module_data_t *mod)
     if(mod->enc_sec_fd <= 0)
     {
         asc_log_error(MSG("failed to open sec [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     mod->sec_thread = asc_thread_init(mod);
@@ -199,7 +199,7 @@ static void ca_thread_loop(void *arg)
         if(ret < 0)
         {
             asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
-            astra_abort();
+            asc_abort();
         }
 
         if(ret > 0)
@@ -270,7 +270,7 @@ static void module_init(module_data_t *mod)
     if(!module_option_number(__adapter, &mod->adapter))
     {
         asc_log_error(MSG("option '%s' is required"), __adapter);
-        astra_abort();
+        asc_abort();
     }
     module_option_number("device", &mod->device);
     mod->ca->adapter = mod->adapter;
@@ -290,7 +290,7 @@ static void module_init(module_data_t *mod)
             break;
 
         asc_log_error(MSG("ci-device is not found"));
-        astra_abort();
+        asc_abort();
     }
 
     mod->ca_thread = asc_thread_init(mod);
@@ -312,6 +312,11 @@ static void module_destroy(module_data_t *mod)
         on_ca_thread_close(mod);
 
     free(mod->ca);
+}
+
+static const char * module_name(void)
+{
+    return "dvb/ddci";
 }
 
 MODULE_STREAM_METHODS()

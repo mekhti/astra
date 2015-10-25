@@ -208,6 +208,11 @@ static void module_destroy(module_data_t *mod)
     }
 }
 
+static const char * module_name(void)
+{
+    return "http_server/downstream";
+}
+
 MODULE_LUA_METHODS()
 {
     { NULL, NULL }

@@ -43,6 +43,7 @@
 #       include <ifaddrs.h>
 #   endif
 #   include <netdb.h>
+#   include <net/if.h>
 #endif
 
 /* hostname */
@@ -56,14 +57,17 @@ static int utils_hostname(lua_State *L)
     return 1;
 }
 
-#ifdef HAVE_GETIFADDRS
 static int utils_ifaddrs(lua_State *L)
 {
+    lua_newtable(L);
+
+#ifdef HAVE_GETIFADDRS
     struct ifaddrs *ifaddr;
     char host[NI_MAXHOST];
 
     const int ret = getifaddrs(&ifaddr);
-    asc_assert(ret != -1, "getifaddrs() failed");
+    if(ret == -1)
+        return 1;
 
     static const char __ipv4[] = "ipv4";
     static const char __ipv6[] = "ipv6";
@@ -71,13 +75,8 @@ static int utils_ifaddrs(lua_State *L)
     static const char __link[] = "link";
 #endif
 
-    lua_newtable(L);
-
     for(struct ifaddrs *i = ifaddr; i; i = i->ifa_next)
     {
-        if(!i->ifa_addr)
-            continue;
-
         lua_getfield(L, -1, i->ifa_name);
         if(lua_isnil(L, -1))
         {
@@ -86,7 +85,28 @@ static int utils_ifaddrs(lua_State *L)
             lua_pushstring(L, i->ifa_name);
             lua_pushvalue(L, -2);
             lua_settable(L, -4);
+
+            lua_pushboolean(L, i->ifa_flags & IFF_UP);
+            lua_setfield(L, -2, "up");
+
+            lua_pushboolean(L, i->ifa_flags & IFF_LOOPBACK);
+            lua_setfield(L, -2, "loopback");
+
+            lua_pushboolean(L, i->ifa_flags & IFF_RUNNING);
+            lua_setfield(L, -2, "running");
+
+            lua_pushboolean(L, i->ifa_flags & IFF_BROADCAST);
+            lua_setfield(L, -2, "broadcast");
+
+            lua_pushboolean(L, i->ifa_flags & IFF_MULTICAST);
+            lua_setfield(L, -2, "multicast");
+
+            lua_pushnumber(L, i->ifa_flags);
+            lua_setfield(L, -2, "flags");
         }
+
+        if(!i->ifa_addr)
+            continue;
 
         const int s = getnameinfo(i->ifa_addr, sizeof(struct sockaddr_in)
                                   , host, sizeof(host), NULL, 0
@@ -138,10 +158,10 @@ static int utils_ifaddrs(lua_State *L)
         lua_pop(L, 1);
     }
     freeifaddrs(ifaddr);
+#endif
 
     return 1;
 }
-#endif
 
 static int utils_stat(lua_State *L)
 {
@@ -172,6 +192,9 @@ static int utils_stat(lua_State *L)
         default: lua_pushstring(L, "unknown"); break;
     }
     lua_setfield(L, -2, "type");
+
+    lua_pushnumber(L, (lua_Number)sb.st_mtime);
+    lua_setfield(L, -2, "mtime");
 
     lua_pushnumber(L, sb.st_uid);
     lua_setfield(L, -2, "uid");
@@ -235,14 +258,12 @@ static int utils_readder_gc(lua_State *L)
 
 /* utils */
 
-LUA_API int luaopen_utils(lua_State *L)
+static int __module_open(lua_State *L)
 {
     static const luaL_Reg api[] =
     {
         { "hostname", utils_hostname },
-#ifdef HAVE_GETIFADDRS
         { "ifaddrs", utils_ifaddrs },
-#endif
         { "stat", utils_stat },
         { NULL, NULL }
     };
@@ -263,3 +284,14 @@ LUA_API int luaopen_utils(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/utils";
+}
+
+const asc_module_t asc_module_utils =
+{
+    .open = __module_open,
+    .name = module_name,
+};

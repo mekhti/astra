@@ -238,7 +238,7 @@ static void module_init(module_data_t *mod)
     if(!mod->config.filename)
     {
         asc_log_error("[file_output] option 'filename' is required");
-        astra_abort();
+        asc_abort();
     }
 
     bool m2ts = 0;
@@ -271,7 +271,7 @@ static void module_init(module_data_t *mod)
         if(posix_memalign((void **)&mod->buffer, ALIGN, mod->buffer_size))
         {
             asc_log_error(MSG("cannot malloc aligned memory"));
-            astra_abort();
+            asc_abort();
         }
     }
     else
@@ -302,7 +302,7 @@ static void module_init(module_data_t *mod)
     if(mod->fd <= 0)
     {
         asc_log_error(MSG("failed to open file [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
 #ifdef HAVE_AIO
@@ -315,7 +315,7 @@ static void module_init(module_data_t *mod)
             if(posix_memalign(&mod->buffer_aio, ALIGN, mod->buffer_size))
             {
                 asc_log_error(MSG("cannot malloc aligned memory"));
-                astra_abort();
+                asc_abort();
             }
 #else /* !HAVE_POSIX_MEMALIGN */
             mod->buffer_aio = malloc(mod->buffer_size);
@@ -379,6 +379,29 @@ static void module_destroy(module_data_t *mod)
 #ifdef HAVE_AIO
     ASC_FREE(mod->buffer_aio, free);
 #endif
+}
+
+static const char * module_name(void)
+{
+#ifdef O_DIRECT
+#   define _MODULE_NAME_1 "directio:Y"
+#else
+#   define _MODULE_NAME_1 "directio:N"
+#endif
+
+#ifdef HAVE_AIO
+#   define _MODULE_NAME_2 "aio:Y"
+#else
+#   define _MODULE_NAME_2 "aio:N"
+#endif
+
+#ifdef HAVE_LIBAIO
+#   define _MODULE_NAME_3 "libaio:Y"
+#else
+#   define _MODULE_NAME_3 "libaio:N"
+#endif
+
+    return "file_output [" _MODULE_NAME_1 " " _MODULE_NAME_2 " " _MODULE_NAME_3 "]";
 }
 
 MODULE_LUA_METHODS()

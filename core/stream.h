@@ -22,8 +22,8 @@
 #define _MODULE_STREAM_H_ 1
 
 #include "base.h"
-#include "module_lua.h"
-#include <core/asc.h>
+#include "list.h"
+#include "lua.h"
 
 typedef struct module_stream_t module_stream_t;
 struct module_stream_t
@@ -53,7 +53,7 @@ void __module_stream_attach(module_stream_t *stream, module_stream_t *child);
 void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
 
 #define module_stream_init(_mod, _on_ts)                                                        \
-    {                                                                                           \
+    do {                                                                                        \
         _mod->__stream.self = _mod;                                                             \
         _mod->__stream.on_ts = _on_ts;                                                          \
         __module_stream_init(&_mod->__stream);                                                  \
@@ -64,17 +64,17 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
             __module_stream_attach(_stream, &_mod->__stream);                                   \
         }                                                                                       \
         lua_pop(lua, 1);                                                                        \
-    }
+    } while(0)
 
 #define module_stream_demux_set(_mod, _join_pid, _leave_pid)                                    \
-    {                                                                                           \
+    do {                                                                                        \
         _mod->__stream.pid_list = (uint8_t *)calloc(MAX_PID, sizeof(uint8_t));                  \
         _mod->__stream.join_pid = _join_pid;                                                    \
         _mod->__stream.leave_pid = _leave_pid;                                                  \
-    }
+    } while(0)
 
 #define module_stream_destroy(_mod)                                                             \
-    {                                                                                           \
+    do {                                                                                        \
         if(_mod->__stream.self)                                                                 \
         {                                                                                       \
             if(_mod->__stream.pid_list)                                                         \
@@ -92,7 +92,7 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
             __module_stream_destroy(&_mod->__stream);                                           \
             _mod->__stream.self = NULL;                                                         \
         }                                                                                       \
-    }
+    } while(0)
 
 #define module_stream_send(_mod, _ts)                                                           \
     __module_stream_send(&_mod->__stream, _ts)
@@ -103,7 +103,7 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
     (_mod->__stream.pid_list[_pid] > 0)
 
 #define module_stream_demux_join_pid(_mod, _pid)                                                \
-    {                                                                                           \
+    do {                                                                                        \
         const uint16_t __pid = _pid;                                                            \
         asc_assert(_mod->__stream.pid_list != NULL                                              \
                    , "%s:%d module_stream_demux_set() is required", __FILE__, __LINE__);        \
@@ -114,10 +114,10 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
         {                                                                                       \
             _mod->__stream.parent->join_pid(_mod->__stream.parent->self, __pid);                \
         }                                                                                       \
-    }
+    } while(0)
 
 #define module_stream_demux_leave_pid(_mod, _pid)                                               \
-    {                                                                                           \
+    do {                                                                                        \
         const uint16_t __pid = _pid;                                                            \
         asc_assert(_mod->__stream.pid_list != NULL                                              \
                    , "%s:%d module_stream_demux_set() is required", __FILE__, __LINE__);        \
@@ -136,7 +136,7 @@ void __module_stream_send(module_stream_t *stream, const uint8_t *ts);
             asc_log_error("%s:%d module_stream_demux_leave_pid() double call pid:%d"            \
                           , __FILE__, __LINE__, __pid);                                         \
         }                                                                                       \
-    }
+    } while(0)
 
 // base
 

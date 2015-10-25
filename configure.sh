@@ -6,6 +6,7 @@ usage()
 Usage: $0 [OPTIONS]
     --help
 
+    --app=NAME                  - binary file name
     --bin=PATH                  - path to install binary file.
                                   default value is /usr/bin/astra
 
@@ -14,7 +15,8 @@ Usage: $0 [OPTIONS]
                                   For example, to append custom module, use:
                                   --with-modules=*:path/to/custom/module
 
-    --with-libdvbcsa            - build with libdvbcsa
+    --with-ffdecsa              - build with ffdecsa
+    --with-libdvbcsa-static     - link libdvbcsa statically
     --with-igmp-emulation       - build with igmp emulated multicast renew
 
     --cc=GCC                    - custom C compiler (cross-compile)
@@ -32,11 +34,22 @@ EOF
 SRCDIR=`dirname $0`
 
 MAKEFILE="Makefile"
-CONFFILE="config.h"
+CONFIG_FILE="config.h"
+MODULES_FILE="modules.h"
 
 APP="astra"
 APP_C="gcc"
 APP_STRIP="strip"
+APP_OBJCOPY="objcopy"
+
+APP_STRIP_ARGS="--strip-debug --strip-unneeded"
+
+#     _    ____   ____
+#    / \  |  _ \ / ___|
+#   / _ \ | |_) | |  _
+#  / ___ \|  _ <| |_| |
+# /_/   \_\_| \_\\____|
+#
 
 ARG_CC=0
 ARG_BPATH="/usr/bin/$APP"
@@ -45,7 +58,8 @@ ARG_BUILD_STATIC=0
 ARG_ARCH="native"
 ARG_CFLAGS=""
 ARG_LDFLAGS=""
-ARG_LIBDVBCSA=0
+ARG_FFDECSA=0
+ARG_LIBDVBCSA_STATIC=0
 ARG_IGMP_EMULATION=0
 ARG_DEBUG=0
 
@@ -54,6 +68,7 @@ set_cc()
     ARG_CC=1
     APP_C="$1"
     APP_STRIP=`echo $1 | sed 's/gcc$/strip/'`
+    APP_OBJCOPY=`echo $1 | sed 's/gcc$/objcopy/'`
 }
 
 while [ $# -ne 0 ] ; do
@@ -64,14 +79,20 @@ while [ $# -ne 0 ] ; do
         "--help")
             usage
             ;;
+        "--app="*)
+            APP=`echo $OPT | sed -e 's/^[a-z-]*=//'`
+            ;;
         "--bin="*)
             ARG_BPATH=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
         "--with-modules="*)
             ARG_MODULES=`echo $OPT | sed -e 's/^[a-z-]*=//'`
             ;;
-        "--with-libdvbcsa")
-            ARG_LIBDVBCSA=1
+        "--with-ffdecsa")
+            ARG_FFDECSA=1
+            ;;
+        "--with-libdvbcsa-static")
+            ARG_LIBDVBCSA_STATIC=1
             ;;
         "--with-igmp-emulation")
             ARG_IGMP_EMULATION=1
@@ -122,82 +143,37 @@ if test -f $MAKEFILE ; then
     echo >&2
 fi
 
-CFLAGS_DEBUG="-O2 -fomit-frame-pointer"
-if [ $ARG_DEBUG -ne 0 ] ; then
-    CFLAGS_DEBUG="-g -O0"
-    APP_STRIP=":"
-fi
+rm -f $CONFIG_FILE
+touch $CONFIG_FILE
+rm -f $MODULES_FILE
+touch $MODULES_FILE
 
-CFLAGS="$CFLAGS_DEBUG -I$SRCDIR -Wall -Wextra -Wstrict-prototypes -pedantic -fno-builtin -std=iso9899:1999 -D_GNU_SOURCE"
+CFLAGS="-O2 -fomit-frame-pointer -g -I$SRCDIR -Wall -Wextra -Wshadow -Wstrict-prototypes -pedantic -fno-builtin -std=iso9899:1999 -D_GNU_SOURCE"
 
 if [ -n "$ARG_CFLAGS" ] ; then
     CFLAGS="$CFLAGS $ARG_CFLAGS"
 fi
 
+if [ $ARG_DEBUG -eq 1 ] ; then
+    APP_STRIP=":"
+fi
+
+#   ____ ____  _   _
+#  / ___|  _ \| | | |
+# | |   | |_) | | | |
+# | |___|  __/| |_| |
+#  \____|_|    \___/
+#
+
 MACHINE=`$APP_C -dumpmachine`
 ARCH=`echo $MACHINE | sed "s|-.*\$||"`
 
-echo $ARCH | grep -q "i[3-6]86\|x86_64"
-ISx86=$?
-
-cpucheck_c()
-{
-    cat <<EOF
-#include <stdio.h>
-int main()
-{
-#if defined(__i386__) || defined(__x86_64__)
-    unsigned int eax, ebx, ecx, edx;
-    __asm__ __volatile__ (  "cpuid"
-                          : "=a" (eax)
-                          , "=b" (ebx)
-                          , "=c" (ecx)
-                          , "=d" (edx)
-                          : "a"  (1));
-
-    if(ecx & (0x00080000 /* 4.1 */ | 0x00100000 /* 4.2 */ )) printf("-msse -msse2 -msse4");
-    else if(ecx & 0x00000001) printf("-msse -msse2");
-    else if(edx & 0x04000000) printf("-msse -msse2");
-    else if(edx & 0x02000000) printf("-msse");
-    else if(edx & 0x00800000) printf("-mmmx");
-#endif
-    return 0;
-}
-EOF
-}
-
-cpucheck()
-{
-    CPUCHECK=".cpucheck"
-    cpucheck_c | $APP_C -Werror -O2 -fno-pic -o $CPUCHECK -x c - >/dev/null 2>&1
-    if [ $? -eq 0 ] ; then
-        ./$CPUCHECK
-        rm $CPUCHECK
-    fi
-}
-
-if [ $ARG_CC -eq 0 ]; then
-    CPUFLAGS=`cpucheck`
-    if [ -n "$CPUFLAGS" ] ; then
-        $APP_C $CFLAGS $CPUFLAGS -E -x c /dev/null >/dev/null 2>&1
-        if [ $? -eq 0 ] ; then
-            CFLAGS="$CFLAGS $CPUFLAGS"
-        fi
-    fi
-elif [ $ISx86 -eq 0 ]; then
-    $APP_C $CFLAGS -msse -E -x c /dev/null >/dev/null 2>&1
-    if [ $? -eq 0 ] ; then
-        CFLAGS="$CFLAGS -msse"
-        $APP_C $CFLAGS -msse2 -E -x c /dev/null >/dev/null 2>&1
-        if [ $? -eq 0 ] ; then
-            CFLAGS="$CFLAGS -msse2"
-            $APP_C $CFLAGS -msse4 -E -x c /dev/null >/dev/null 2>&1
-            if [ $? -eq 0 ] ; then
-                CFLAGS="$CFLAGS -msse4"
-            fi
-        fi
-    fi
-fi
+#     _    ____   ____ _   _
+#    / \  |  _ \ / ___| | | |
+#   / _ \ | |_) | |   | |_| |
+#  / ___ \|  _ <| |___|  _  |
+# /_/   \_\_| \_\\____|_| |_|
+#
 
 $APP_C $CFLAGS -march=$ARG_ARCH -E -x c /dev/null >/dev/null 2>&1
 if [ $? -eq 0 ] ; then
@@ -209,30 +185,34 @@ fi
 case "$MACHINE" in
 *"android"*)
     OS="android"
-    CFLAGS="$CFLAGS -DWITH_EPOLL=1"
+    CFLAGS="$CFLAGS -DWITH_EPOLL"
     LDFLAGS="-ldl -lm"
     ;;
 *"linux"*)
     OS="linux"
-    CFLAGS="$CFLAGS -pthread -DWITH_EPOLL=1"
+    CFLAGS="$CFLAGS -pthread -DWITH_EPOLL"
     if $APP_C $CFLAGS -dM -E -xc /dev/null | grep -q "__i386__" ; then
         CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64"
     fi
-    LDFLAGS="-ldl -lm -lpthread"
+    LDFLAGS="-ldl -lm -lpthread -lrt"
     ;;
 *"freebsd"*)
     OS="freebsd"
-    CFLAGS="$CFLAGS -pthread -DWITH_KQUEUE=1"
+    CFLAGS="$CFLAGS -pthread -DWITH_KQUEUE"
     LDFLAGS="-lm -lpthread"
+    APP_STRIP_ARGS=""
+    APP_OBJCOPY=":"
     ;;
 *"darwin"*)
     OS="darwin"
-    CFLAGS="$CFLAGS -pthread -Wno-deprecated-declarations -DWITH_KQUEUE=1"
+    CFLAGS="$CFLAGS -pthread -DWITH_KQUEUE"
     LDFLAGS=""
+    APP_STRIP_ARGS=""
+    APP_OBJCOPY=":"
     ;;
 *"mingw"*)
     OS="mingw"
-    CFLAGS="$CFLAGS -DWITH_SELECT=1"
+    CFLAGS="$CFLAGS -DWITH_SELECT"
     APP="$APP.exe"
     WS32=`$APP_C -print-file-name=libws2_32.a`
     LDFLAGS="$WS32"
@@ -251,14 +231,71 @@ if [ -n "$ARG_LDFLAGS" ] ; then
     LDFLAGS="$LDFLAGS $ARG_LDFLAGS"
 fi
 
-# libdvbcsa
+#  ____ ____  _____
+# / ___/ ___|| ____|
+# \___ \___ \|  _|
+#  ___) |__) | |___
+# |____/____/|_____|
+#
 
-LIBDVBCSA=0
+APP_SSE=0
+
+sse_test_c()
+{
+    cat <<EOF
+#include <stdio.h>
+#include <emmintrin.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_sse()
+{
+    RET=1
+
+    sse_test_c | $APP_C -Werror $CFLAGS -c -o .link-test.o -x c - >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        $APP_C $LDFLAGS .link-test.o -o .link-test >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            RET=0
+        fi
+    fi
+
+    rm -f .link-test.o .link-test
+    return $RET
+}
+
+if echo "$ARCH" | grep -q "i[3-6]86\|x86_64" ; then
+    $APP_C $CFLAGS -msse -E -x c /dev/null >/dev/null 2>&1
+    if [ $? -eq 0 ] ; then
+        CFLAGS="$CFLAGS -msse"
+        $APP_C $CFLAGS -msse2 -E -x c /dev/null >/dev/null 2>&1
+        if [ $? -eq 0 ] ; then
+            CFLAGS="$CFLAGS -msse2"
+            $APP_C $CFLAGS -msse4 -E -x c /dev/null >/dev/null 2>&1
+            if [ $? -eq 0 ] ; then
+                CFLAGS="$CFLAGS -msse4"
+            fi
+        fi
+
+        if check_sse ; then
+            APP_SSE=1
+        fi
+    fi
+fi
+
+#  _     ___ ____  ______     ______   ____ ____    _
+# | |   |_ _| __ )|  _ \ \   / / __ ) / ___/ ___|  / \
+# | |    | ||  _ \| | | \ \ / /|  _ \| |   \___ \ / _ \
+# | |___ | || |_) | |_| |\ V / | |_) | |___ ___) / ___ \
+# |_____|___|____/|____/  \_/  |____/ \____|____/_/   \_\
+#
+
+APP_HAVE_LIBDVBCSA=0
 
 libdvbcsa_test_c()
 {
     cat <<EOF
-#include <stdio.h>
 #include <dvbcsa/dvbcsa.h>
 int main(void) {
     struct dvbcsa_key_s *key = dvbcsa_key_alloc();
@@ -270,27 +307,25 @@ EOF
 
 check_libdvbcsa()
 {
-    libdvbcsa_test_c | $APP_C -Werror $1 -c -o .link-test.o -x c - >/dev/null 2>&1
+    RET=1
+
+    libdvbcsa_test_c | $APP_C -Werror $1 -Wno-strict-prototypes -c -o .link-test.o -x c - >/dev/null 2>&1
     if [ $? -eq 0 ] ; then
         $APP_C .link-test.o -o .link-test $2 >/dev/null 2>&1
         if [ $? -eq 0 ] ; then
-            rm -f .link-test.o .link-test
-            return 0
-        else
-            rm -f .link-test.o
-            return 1
+            RET=0
         fi
-    else
-        return 1
     fi
+
+    rm -f .link-test.o .link-test
+    return $RET
 }
 
 build_libdvbcsa()
 {
-    $APP_C -dM -E -x c /dev/null | grep -q "__x86_64__"
-    if [ $? -eq 0 ] ; then
-        echo "Build libdvbcsa with UINT64"
-        $SRCDIR/contrib/libdvbcsa.sh UINT64 $APP_C
+    if [ $APP_SSE -ne 0 ] ; then
+        echo "Build libdvbcsa with SSE"
+        $SRCDIR/contrib/libdvbcsa.sh SSE $APP_C
         return $?
     else
         echo "Build libdvbcsa with UINT32"
@@ -302,24 +337,17 @@ build_libdvbcsa()
 check_libdvbcsa_all()
 {
     if check_libdvbcsa "$CFLAGS" "$LDFLAGS" ; then
-        LIBDVBCSA=1
+        APP_HAVE_LIBDVBCSA=1
         return 0
     fi
 
-    LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
-    LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
-    if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
-        LIBDVBCSA=1
-        CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
-        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
-        return 0
-    fi
-
-    LIBDVBCSA_LDFLAGS="-ldvbcsa"
-    if check_libdvbcsa "" "$LIBDVBCSA_LDFLAGS" ; then
-        LIBDVBCSA=1
-        LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
-        return 0
+    if [ "$ARG_LIBDVBCSA_STATIC" -ne 1 ] ; then
+        LIBDVBCSA_LDFLAGS="-ldvbcsa"
+        if check_libdvbcsa "" "$LIBDVBCSA_LDFLAGS" ; then
+            APP_HAVE_LIBDVBCSA=2
+            LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
+            return 0
+        fi
     fi
 
     if ! build_libdvbcsa ; then
@@ -329,7 +357,7 @@ check_libdvbcsa_all()
     LIBDVBCSA_CFLAGS="-I$SRCDIR/contrib/build/libdvbcsa/src"
     LIBDVBCSA_LDFLAGS="$SRCDIR/contrib/build/libdvbcsa/libdvbcsa.a"
     if check_libdvbcsa "$LIBDVBCSA_CFLAGS" "$LIBDVBCSA_LDFLAGS" ; then
-        LIBDVBCSA=1
+        APP_HAVE_LIBDVBCSA=3
         CFLAGS="$CFLAGS $LIBDVBCSA_CFLAGS"
         LDFLAGS="$LDFLAGS $LIBDVBCSA_LDFLAGS"
         return 0
@@ -338,11 +366,14 @@ check_libdvbcsa_all()
     return 1
 }
 
-if [ $ARG_LIBDVBCSA -eq 1 ] ; then
-    check_libdvbcsa_all
-fi
+check_libdvbcsa_all
 
-#
+#       _            _                   _   _   _
+#   ___| | ___   ___| | __     __ _  ___| |_| |_(_)_ __ ___   ___
+#  / __| |/ _ \ / __| |/ /    / _` |/ _ \ __| __| | '_ ` _ \ / _ \
+# | (__| | (_) | (__|   <    | (_| |  __/ |_| |_| | | | | | |  __/
+#  \___|_|\___/ \___|_|\_\____\__, |\___|\__|\__|_|_| |_| |_|\___|
+#                       |_____|___/
 
 clock_gettime_test_c()
 {
@@ -357,13 +388,20 @@ EOF
 
 check_clock_gettime()
 {
-    clock_gettime_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -lrt -x c - >/dev/null 2>&1
+    clock_gettime_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
+APP_HAVE_CLOCK_GETTIME=0
 if check_clock_gettime ; then
-    CFLAGS="$CFLAGS -DHAVE_CLOCK_GETTIME=1"
-    LDFLAGS="$LDFLAGS -lrt"
+    APP_HAVE_CLOCK_GETTIME=1
 fi
+
+#  ____   ____ _____ ____
+# / ___| / ___|_   _|  _ \
+# \___ \| |     | | | |_) |
+#  ___) | |___  | | |  __/
+# |____/ \____| |_| |_|
+#
 
 sctp_h_test_c()
 {
@@ -380,9 +418,17 @@ check_sctp_h()
     sctp_h_test_c | $APP_C -Werror $CFLAGS -o /dev/null -x c - >/dev/null 2>&1
 }
 
+APP_HAVE_NETINET_SCTP_H=0
 if check_sctp_h ; then
-    CFLAGS="$CFLAGS -DHAVE_NETINET_SCTP_H=1"
+    APP_HAVE_NETINET_SCTP_H=1
 fi
+
+#  _____           _ _
+# | ____|_ __   __| (_) __ _ _ __
+# |  _| | '_ \ / _` | |/ _` | '_ \
+# | |___| | | | (_| | | (_| | | | |
+# |_____|_| |_|\__,_|_|\__,_|_| |_|
+#
 
 endian_h_test_c()
 {
@@ -400,9 +446,17 @@ check_endian_h()
     endian_h_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
+APP_HAVE_ENDIAN_H=0
 if check_endian_h ; then
-    CFLAGS="$CFLAGS -DHAVE_ENDIAN_H=1"
+    APP_HAVE_ENDIAN_H=1
 fi
+
+#                           _
+#  _ __  _ __ ___  __ _  __| |
+# | '_ \| '__/ _ \/ _` |/ _` |
+# | |_) | | |  __/ (_| | (_| |
+# | .__/|_|  \___|\__,_|\__,_|
+# |_|
 
 pread_test_c()
 {
@@ -417,9 +471,17 @@ check_pread()
     pread_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
+APP_HAVE_PREAD=0
 if check_pread ; then
-    CFLAGS="$CFLAGS -DHAVE_PREAD=1"
+    APP_HAVE_PREAD=1
 fi
+
+#      _                  _
+#  ___| |_ _ __ _ __   __| |_   _ _ __
+# / __| __| '__| '_ \ / _` | | | | '_ \
+# \__ \ |_| |  | | | | (_| | |_| | |_) |
+# |___/\__|_|  |_| |_|\__,_|\__,_| .__/
+#                                |_|
 
 strndup_test_c()
 {
@@ -434,9 +496,17 @@ check_strndup()
     strndup_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
+APP_HAVE_STRNDUP=0
 if check_strndup ; then
-    CFLAGS="$CFLAGS -DHAVE_STRNDUP=1"
+    APP_HAVE_STRNDUP=1
 fi
+
+#      _              _
+#  ___| |_ _ __ _ __ | | ___ _ __
+# / __| __| '__| '_ \| |/ _ \ '_ \
+# \__ \ |_| |  | | | | |  __/ | | |
+# |___/\__|_|  |_| |_|_|\___|_| |_|
+#
 
 strnlen_test_c()
 {
@@ -451,17 +521,220 @@ check_strnlen()
     strnlen_test_c | $APP_C -Werror $CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
 }
 
+APP_HAVE_STRNLEN=0
 if check_strnlen ; then
-    CFLAGS="$CFLAGS -DHAVE_STRNLEN=1"
+    APP_HAVE_STRNLEN=1
 fi
 
-# IGMP Emulation
+#                  _                                         _ _
+#  _ __   ___  ___(_)_  __    _ __ ___   ___ _ __ ___   __ _| (_) __ _ _ __
+# | '_ \ / _ \/ __| \ \/ /   | '_ ` _ \ / _ \ '_ ` _ \ / _` | | |/ _` | '_ \
+# | |_) | (_) \__ \ |>  <    | | | | | |  __/ | | | | | (_| | | | (_| | | | |
+# | .__/ \___/|___/_/_/\_\___|_| |_| |_|\___|_| |_| |_|\__,_|_|_|\__, |_| |_|
+# |_|                   |_____|                                  |___/
 
-if [ $ARG_IGMP_EMULATION -eq 1 ]; then
-    CFLAGS="$CFLAGS -DIGMP_EMULATION"
+posix_memalign_test_c()
+{
+    cat <<EOF
+#include <stdio.h>
+#include <stdlib.h>
+int main(void) { void *p = NULL; return posix_memalign(&p, 32, 128); }
+EOF
+}
+
+check_posix_memalign()
+{
+    posix_memalign_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+APP_HAVE_POSIX_MEMALIGN=0
+if check_posix_memalign ; then
+    APP_HAVE_POSIX_MEMALIGN=1
 fi
 
-# APP flags
+#        _
+#   __ _(_) ___
+#  / _` | |/ _ \
+# | (_| | | (_) |
+#  \__,_|_|\___/
+#
+
+aio_test_c()
+{
+    cat <<EOF
+#ifdef _WIN32
+#   error Win32
+#endif
+#include <aio.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_aio()
+{
+    aio_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+#  _ _ _           _
+# | (_) |__   __ _(_) ___
+# | | | '_ \ / _` | |/ _ \
+# | | | |_) | (_| | | (_) |
+# |_|_|_.__/ \__,_|_|\___/
+#
+
+libaio_test_c()
+{
+    cat <<EOF
+#include <libaio.h>
+int main(void) { return 0; }
+EOF
+}
+
+check_libaio()
+{
+    libaio_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -o /dev/null -x c - >/dev/null 2>&1
+}
+
+APP_HAVE_AIO=0
+APP_HAVE_LIBAIO=0
+
+if check_aio ; then
+    APP_HAVE_AIO=1
+    if [ "$OS" = "linux" ] ; then
+        if check_libaio ; then
+            APP_HAVE_LIBAIO=1
+            LDFLAGS="$LDFLAGS -laio"
+        fi
+    fi
+fi
+
+#             _   _  __           _     _
+#   __ _  ___| |_(_)/ _| __ _  __| | __| |_ __ ___
+#  / _` |/ _ \ __| | |_ / _` |/ _` |/ _` | '__/ __|
+# | (_| |  __/ |_| |  _| (_| | (_| | (_| | |  \__ \
+#  \__, |\___|\__|_|_|  \__,_|\__,_|\__,_|_|  |___/
+#  |___/
+
+getifaddrs_test_c()
+{
+    cat <<EOF
+#include <stdio.h>
+#include <sys/types.h>
+#include <ifaddrs.h>
+int main(void) {
+    struct ifaddrs *ifaddr;
+    const int s = getifaddrs(&ifaddr);
+    freeifaddrs(ifaddr);
+    return s;
+}
+EOF
+}
+
+check_getifaddrs()
+{
+    getifaddrs_test_c | $APP_C -Werror $CFLAGS $APP_CFLAGS -c -o /dev/null -x c - >/dev/null 2>&1
+}
+
+APP_HAVE_GETIFADDRS=0
+if check_getifaddrs ; then
+    APP_HAVE_GETIFADDRS=1
+fi
+
+
+#                   __ _         _
+#   ___ ___  _ __  / _(_) __ _  | |__
+#  / __/ _ \| '_ \| |_| |/ _` | | '_ \
+# | (_| (_) | | | |  _| | (_| |_| | | |
+#  \___\___/|_| |_|_| |_|\__, (_)_| |_|
+#                        |___/
+
+exec 6>$CONFIG_FILE
+
+cat >&6 <<EOF
+/* generated by configure.sh */
+
+#ifndef _ASC_CONFIG_H_
+#define _ASC_CONFIG_H_ 1
+
+#define APP_OS "$OS"
+EOF
+
+if [ $APP_SSE -ne 0 ] ; then
+    echo "#define APP_SSE 1" >&6
+    echo "#define HAVE_EMMINTRIN_H 1" >&6
+fi
+
+if [ $APP_HAVE_CLOCK_GETTIME -ne 0 ] ; then
+    echo "#define HAVE_CLOCK_GETTIME 1" >&6
+fi
+
+if [ $APP_HAVE_NETINET_SCTP_H -ne 0 ] ; then
+    echo "#define HAVE_NETINET_SCTP_H 1" >&6
+fi
+
+if [ $APP_HAVE_ENDIAN_H -ne 0 ] ; then
+    echo "#define HAVE_ENDIAN_H 1" >&6
+fi
+
+if [ $APP_HAVE_PREAD -ne 0 ] ; then
+    echo "#define HAVE_PREAD 1" >&6
+fi
+
+if [ $APP_HAVE_STRNDUP -ne 0 ] ; then
+    echo "#define HAVE_STRNDUP 1" >&6
+fi
+
+if [ $APP_HAVE_STRNLEN -ne 0 ] ; then
+    echo "#define HAVE_STRNLEN 1" >&6
+fi
+
+if [ $ARG_IGMP_EMULATION -ne 0 ] ; then
+    echo "#define IGMP_EMULATION 1" >&6
+fi
+
+if [ $APP_HAVE_POSIX_MEMALIGN -ne 0 ] ; then
+    echo "#define HAVE_POSIX_MEMALIGN 1" >&6
+fi
+
+if [ $APP_HAVE_AIO -ne 0 ] ; then
+    echo "#define HAVE_AIO 1" >&6
+fi
+
+if [ $APP_HAVE_LIBAIO -ne 0 ] ; then
+    echo "#define HAVE_LIBAIO 1" >&6
+fi
+
+if [ $APP_HAVE_GETIFADDRS -ne 0 ] ; then
+    echo "#define HAVE_GETIFADDRS 1" >&6
+fi
+
+if [ $ARG_FFDECSA -ne 0 ] ; then
+    echo "#define HAVE_FFDECSA 1" >&6
+    if [ $APP_SSE -eq 1 ] ; then
+        echo "#define PARALLEL_MODE 1286" >&6
+    else
+        echo "#define PARALLEL_MODE 642" >&6
+    fi
+fi
+
+if [ $APP_HAVE_LIBDVBCSA -ne 0 ] ; then
+    echo "#define HAVE_LIBDVBCSA 1" >&6
+    echo "#define LIBDVBCSA_MODE $APP_HAVE_LIBDVBCSA" >&6
+fi
+
+cat >&6 <<EOF
+
+#endif /* _ASC_CONFIG_H_ */
+EOF
+
+exec 6>&-
+
+#  _____ _
+# |  ___| | __ _  __ _ ___
+# | |_  | |/ _` |/ _` / __|
+# |  _| | | (_| | (_| \__ \
+# |_|   |_|\__,_|\__, |___/
+#                |___/
 
 APP_CFLAGS="$CFLAGS"
 APP_LDFLAGS="$LDFLAGS"
@@ -490,7 +763,11 @@ Compiler Flags:
 
 EOF
 
-# makefile
+#  __  __       _         __ _ _
+# |  \/  | __ _| | _____ / _(_) | ___
+# | |\/| |/ _` | |/ / _ \ |_| | |/ _ \
+# | |  | | (_| |   <  __/  _| | |  __/
+# |_|  |_|\__,_|_|\_\___|_| |_|_|\___|
 
 rm -f $MAKEFILE
 exec 5>$MAKEFILE
@@ -512,14 +789,18 @@ MODS_OBJS   =
 all: \$(APP)
 
 clean: \$(APP)-clean
-	@rm -f Makefile config.h
+	@rm -f Makefile config.h modules.h modules/inscript/inscript.h
 
 distclean: clean
 EOF
 
 echo "Check modules:" >&2
 
-# main app
+#                  _
+#  _ __ ___   __ _(_)_ __    ___
+# | '_ ` _ \ / _` | | '_ \  / __|
+# | | | | | | (_| | | | | || (__
+# |_| |_| |_|\__,_|_|_| |_(_)___|
 
 APP_SOURCE="$SRCDIR/main.c"
 APP_OBJS=""
@@ -539,7 +820,6 @@ EOF
     return 0
 }
 
-touch $CONFFILE
 __check_main_app >&5
 if [ $? -ne 0 ] ; then
     echo "  ERROR: $APP_SOURCE" >&2
@@ -548,16 +828,17 @@ if [ $? -ne 0 ] ; then
         rm -f $TMP_MODULE_MK
     fi
     exec 5>&-
-    rm -f $MAKEFILE
-    exec 6>&-
-    rm -f $CONFFILE
     exit 1
 else
     echo "     OK: $APP_SOURCE"
 fi
 echo "" >&5
 
-#
+#                      _       _                  _
+#  _ __ ___   ___   __| |_   _| | ___   _ __ ___ | | __
+# | '_ ` _ \ / _ \ / _` | | | | |/ _ \ | '_ ` _ \| |/ /
+# | | | | | | (_) | (_| | |_| | |  __/_| | | | | |   <
+# |_| |_| |_|\___/ \__,_|\__,_|_|\___(_)_| |_| |_|_|\_\
 
 select_modules()
 {
@@ -658,58 +939,76 @@ check_module()
     fi
 }
 
-# CORE
+#   ____
+#  / ___|___  _ __ ___
+# | |   / _ \| '__/ _ \
+# | |__| (_) | | |  __/
+#  \____\___/|_|  \___|
 
 check_module $SRCDIR/core "CORE_OBJS"
 check_module $SRCDIR/lua "CORE_OBJS"
 
-# MODULES
+#  __  __           _       _
+# |  \/  | ___   __| |_   _| | ___  ___
+# | |\/| |/ _ \ / _` | | | | |/ _ \/ __|
+# | |  | | (_) | (_| | |_| | |  __/\__ \
+# |_|  |_|\___/ \__,_|\__,_|_|\___||___/
 
 for M in $APP_MODULES_LIST ; do
     check_module $M "MODS_OBJS"
 done
 
-# config.h
+#                      _       _             _
+#  _ __ ___   ___   __| |_   _| | ___  ___  | |__
+# | '_ ` _ \ / _ \ / _` | | | | |/ _ \/ __| | '_ \
+# | | | | | | (_) | (_| | |_| | |  __/\__ \_| | | |
+# |_| |_| |_|\___/ \__,_|\__,_|_|\___||___(_)_| |_|
+#
 
-rm -f $CONFFILE
-exec 6>$CONFFILE
+rm -f $MODULES_FILE
+exec 6>$MODULES_FILE
 
 cat >&6 <<EOF
 /* generated by configure.sh */
-#ifndef _CONFIG_H_
-#define _CONFIG_H_
+
+#ifndef _ASC_MODULES_H_
+#define _ASC_MODULES_H_ 1
+
+#include <core/lua.h>
 
 EOF
 
 for M in $APP_MODULES_CONF ; do
-    echo "extern int luaopen_$M(lua_State *);" >&6
+    echo "extern const asc_module_t asc_module_$M;" >&6
 done
 
 cat >&6 <<EOF
 
-int (*astra_mods[])(lua_State *) =
+static const asc_module_t *asc_modules[] =
 {
 EOF
 
 for M in $APP_MODULES_CONF ; do
-    echo "    luaopen_$M," >&6
+    echo "    &asc_module_$M," >&6
 done
 
 cat >&6 <<EOF
-    NULL
 };
 
-#endif /* _CONFIG_H_ */
+#endif /* _ASC_MODULES_H_ */
 EOF
 
 exec 6>&-
 
-# MAKEFILE LINKER
+#  _     _       _
+# | |   (_)_ __ | | __
+# | |   | | '_ \| |/ /
+# | |___| | | | |   <
+# |_____|_|_| |_|_|\_\
 
 VERSION_MAJOR=`sed -n 's/.*ASTRA_VERSION_MAJOR \([0-9]*\).*/\1/p' version.h`
 VERSION_MINOR=`sed -n 's/.*ASTRA_VERSION_MINOR \([0-9]*\).*/\1/p' version.h`
-VERSION_PATCH=`sed -n 's/.*ASTRA_VERSION_PATCH \([0-9]*\).*/\1/p' version.h`
-VERSION="$VERSION_MAJOR.$VERSION_MINOR.$VERSION_PATCH"
+VERSION="$VERSION_MAJOR.$VERSION_MINOR"
 
 cat >&2 <<EOF
 
@@ -726,21 +1025,20 @@ cat >&5 <<EOF
 LD          = $APP_C
 LDFLAGS     = $APP_LDFLAGS
 STRIP       = $APP_STRIP
+OBJCOPY     = $APP_OBJCOPY
 VERSION     = $VERSION
 BPATH       = $ARG_BPATH
 
 \$(APP): $APP_OBJS \$(CORE_OBJS) \$(MODS_OBJS)
 	@echo "BUILD: \$@"
 	@\$(LD) \$^ -o \$@ \$(LDFLAGS)
-	@\$(STRIP) \$@
+	@\$(OBJCOPY) --only-keep-debug \$@ \$@.debug
+	@\$(STRIP) $APP_STRIP_ARGS \$@
 
 install: \$(APP)
 	@echo "INSTALL: \$(BPATH)"
 	@rm -f \$(BPATH)
 	@cp \$(APP) \$(BPATH)
-EOF
-
-cat >&5 <<EOF
 
 uninstall:
 	@echo "UNINSTALL: \$(APP)"
@@ -748,7 +1046,7 @@ uninstall:
 
 \$(APP)-clean:
 	@echo "CLEAN: \$(APP)"
-	@rm -f \$(APP) $APP_OBJS
+	@rm -f \$(APP) \$(APP).debug $APP_OBJS
 	@rm -f \$(MODS_OBJS)
 	@rm -f \$(CORE_OBJS)
 EOF

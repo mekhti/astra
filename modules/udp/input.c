@@ -174,6 +174,11 @@ static void module_destroy(module_data_t *mod)
     on_close(mod);
 }
 
+static const char * module_name(void)
+{
+    return "udp_input";
+}
+
 MODULE_STREAM_METHODS()
 
 MODULE_LUA_METHODS()

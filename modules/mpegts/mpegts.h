@@ -2,7 +2,7 @@
  * Astra Module: MPEG-TS
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2014, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +24,11 @@
 #include <astra.h>
 
 /*
- * ooooooooooo  oooooooo8
- * 88  888  88 888
- *     888      888oooooo
- *     888             888
- *    o888o    o88oooo888
+ *  _____ ____
+ * |_   _/ ___|
+ *   | | \___ \
+ *   | |  ___) |
+ *   |_| |____/
  *
  */
 
@@ -39,43 +39,52 @@
 #define M2TS_PACKET_SIZE 192
 
 #define MAX_PID 8192
+
+#define PAT_PID 0x00
+#define CAT_PID 0x01
+#define NIT_PID 0x10
+#define SDT_PID 0x11
+#define EIT_PID 0x12
 #define NULL_TS_PID (MAX_PID - 1)
+
 #define DESC_MAX_SIZE 1024
 
-#define TS_IS_SYNC(_ts) ((_ts[0] == 0x47))
-#define TS_IS_PAYLOAD(_ts) ((_ts[3] & 0x10))
-#define TS_IS_PAYLOAD_START(_ts) ((TS_IS_PAYLOAD(_ts) && (_ts[1] & 0x40)))
-#define TS_IS_AF(_ts) ((_ts[3] & 0x20))
-#define TS_IS_SCRAMBLED(_ts) ((_ts[3] & 0xC0))
+#define BUFFER_TO_PID(_pointer) (BUFFER_TO_U16(_pointer) & 0x1FFF)
 
-#define TS_GET_PID(_ts) ((uint16_t)(((_ts[1] & 0x1F) << 8) | _ts[2]))
+#define TS_IS_SYNC(_ts) ((_ts)[0] == 0x47)
+#define TS_IS_PAYLOAD(_ts) ((_ts)[3] & 0x10)
+#define TS_IS_PAYLOAD_START(_ts) (TS_IS_PAYLOAD(_ts) && ((_ts)[1] & 0x40))
+#define TS_IS_AF(_ts) ((_ts)[3] & 0x20)
+#define TS_IS_SCRAMBLED(_ts) ((_ts)[3] & 0xC0)
+
+#define TS_GET_PID(_ts) BUFFER_TO_PID(&(_ts)[1])
 #define TS_SET_PID(_ts, _pid)                                                                   \
-    {                                                                                           \
+    do {                                                                                        \
         uint8_t *__ts = _ts;                                                                    \
         const uint16_t __pid = _pid;                                                            \
         __ts[1] = (__ts[1] & ~0x1F) | ((__pid >> 8) & 0x1F);                                    \
         __ts[2] = __pid & 0xFF;                                                                 \
-    }
+    } while(0)
 
-#define TS_GET_CC(_ts) (_ts[3] & 0x0F)
-#define TS_SET_CC(_ts, _cc) { _ts[3] = (_ts[3] & 0xF0) | ((_cc) & 0x0F); }
+#define TS_GET_CC(_ts) ((_ts)[3] & 0x0F)
+#define TS_SET_CC(_ts, _cc) { (_ts)[3] = ((_ts)[3] & 0xF0) | ((_cc) & 0x0F); }
 
 #define TS_GET_PAYLOAD(_ts) (                                                                   \
     (!TS_IS_PAYLOAD(_ts)) ? (NULL) : (                                                          \
-        (!TS_IS_AF(_ts)) ? (&_ts[TS_HEADER_SIZE]) : (                                           \
-            (_ts[4] > TS_BODY_SIZE - 1) ? (NULL) : (&_ts[TS_HEADER_SIZE + 1 + _ts[4]]))         \
+        (!TS_IS_AF(_ts)) ? (&(_ts)[TS_HEADER_SIZE]) : (                                         \
+            ((_ts)[4] > TS_BODY_SIZE - 1) ? (NULL) : (&(_ts)[TS_HEADER_SIZE + 1 + (_ts)[4]]))   \
         )                                                                                       \
     )
 
 typedef void (*ts_callback_t)(void *, const uint8_t *);
 
 /*
- * ooooooooooo ooooo  oooo oooooooooo ooooooooooo  oooooooo8
- * 88  888  88   888  88    888    888 888    88  888
- *     888         888      888oooo88  888ooo8     888oooooo
- *     888         888      888        888    oo          888
- *    o888o       o888o    o888o      o888ooo8888 o88oooo888
- *
+ *  _____
+ * |_   _|   _ _ __   ___  ___
+ *   | || | | | '_ \ / _ \/ __|
+ *   | || |_| | |_) |  __/\__ \
+ *   |_| \__, | .__/ \___||___/
+ *       |___/|_|
  */
 
 typedef enum
@@ -110,19 +119,17 @@ const char * mpeg4_profile_level_name(uint8_t type_id);
 void mpegts_desc_to_lua(const uint8_t *desc);
 
 /*
- * oooooooooo   oooooooo8 ooooo
- *  888    888 888         888
- *  888oooo88   888oooooo  888
- *  888                888 888
- * o888o       o88oooo888 o888o
+ *  ____  ____ ___
+ * |  _ \/ ___|_ _|
+ * | |_) \___ \| |
+ * |  __/ ___) | |
+ * |_|   |____/___|
  *
  */
 
 #define PSI_MAX_SIZE 0x00000FFF
-
 #define PSI_HEADER_SIZE 3
-
-#define PSI_BUFFER_GET_SIZE(_b) (PSI_HEADER_SIZE + (((_b[1] & 0x0f) << 8) | _b[2]))
+#define PSI_BUFFER_GET_SIZE(_b) (PSI_HEADER_SIZE + (BUFFER_TO_U16(&(_b)[1]) & 0x0FFF))
 
 typedef struct
 {
@@ -150,36 +157,23 @@ void mpegts_psi_mux(mpegts_psi_t *psi, const uint8_t *ts, psi_callback_t callbac
 void mpegts_psi_demux(mpegts_psi_t *psi, ts_callback_t callback, void *arg);
 
 #define PSI_CALC_CRC32(_psi) crc32b(_psi->buffer, _psi->buffer_size - CRC32_SIZE)
-
-// with inline function we have nine more instructions
-#define PSI_GET_CRC32(_psi) (                                                                   \
-    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 0] << 24) |                                  \
-    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 1] << 16) |                                  \
-    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 2] << 8 ) |                                  \
-    (_psi->buffer[_psi->buffer_size - CRC32_SIZE + 3]      ) )
-
+#define PSI_GET_CRC32(_psi) BUFFER_TO_U32(&_psi->buffer[_psi->buffer_size - CRC32_SIZE])
 #define PSI_SET_CRC32(_psi)                                                                     \
-    {                                                                                           \
-        const uint32_t __crc = PSI_CALC_CRC32(_psi);                                            \
-        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 0] = __crc >> 24;                         \
-        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 1] = __crc >> 16;                         \
-        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 2] = __crc >> 8;                          \
-        _psi->buffer[_psi->buffer_size - CRC32_SIZE + 3] = __crc & 0xFF;                        \
-    }
+    U32_TO_BUFFER(PSI_CALC_CRC32(_psi), &_psi->buffer[_psi->buffer_size - CRC32_SIZE])
 
 #define PSI_SET_SIZE(_psi)                                                                      \
-    {                                                                                           \
+    do {                                                                                        \
         const uint16_t __size = _psi->buffer_size - PSI_HEADER_SIZE;                            \
         _psi->buffer[1] = (_psi->buffer[1] & 0xF0) | ((__size >> 8) & 0x0F);                    \
         _psi->buffer[2] = (__size & 0xFF);                                                      \
-    }
+    } while(0)
 
 /*
- * oooooooooo ooooooooooo  oooooooo8
- *  888    888 888    88  888
- *  888oooo88  888ooo8     888oooooo
- *  888        888    oo          888
- * o888o      o888ooo8888 o88oooo888
+ *  ____  _____ ____
+ * |  _ \| ____/ ___|
+ * | |_) |  _| \___ \
+ * |  __/| |___ ___) |
+ * |_|   |_____|____/
  *
  */
 
@@ -187,8 +181,8 @@ void mpegts_psi_demux(mpegts_psi_t *psi, ts_callback_t callback, void *arg);
 
 #define PES_HEADER_SIZE 6
 
-#define PES_BUFFER_GET_SIZE(_b) (((_b[4] << 8) | _b[5]) + 6)
-#define PES_BUFFER_GET_HEADER(_b) ((_b[0] << 16) | (_b[1] << 8) | (_b[2]))
+#define PES_BUFFER_GET_SIZE(_b) (BUFFER_TO_U16(&(_b)[4]) + 6)
+#define PES_BUFFER_GET_HEADER(_b) (BUFFER_TO_U24(&(_b)[0]))
 
 typedef struct
 {
@@ -196,15 +190,12 @@ typedef struct
     uint16_t pid;
     uint8_t cc;
 
-    uint64_t block_time_begin;
-    uint64_t block_time_total;
-
     // demux
     uint8_t ts[TS_PACKET_SIZE];
 
     uint32_t pcr_interval;
     uint64_t pcr_time;
-    uint64_t pcr_time_offset;
+    uint64_t pcr_time_start;
 
     // mux
     uint32_t buffer_size;
@@ -233,7 +224,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
     )
 
 #define PES_INIT(_pes, _stream_id, _is_pts, _is_dts)                                            \
-    {                                                                                           \
+    do {                                                                                        \
         const uint8_t __stream_id = _stream_id;                                                 \
         _pes->buffer[0] = 0x00;                                                                 \
         _pes->buffer[1] = 0x00;                                                                 \
@@ -261,7 +252,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
                 }                                                                               \
             }                                                                                   \
         }                                                                                       \
-    }
+    } while(0)
 
 #define __PES_IS_PTS(_pes) (PES_IS_SYNTAX_SPEC(_pes) && (_pes->buffer[7] & 0x80))
 
@@ -275,7 +266,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
     ))
 
 #define PES_SET_PTS(_pes, _pts)                                                                 \
-    {                                                                                           \
+    do {                                                                                        \
         asc_assert(__PES_IS_PTS(_pes), "PTS flag is not set");                                  \
         const uint64_t __pts = _pts;                                                            \
         _pes->buffer[9] = 0x20 | ((__pts >> 29) & 0x0E) | 0x01;                                 \
@@ -283,7 +274,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         _pes->buffer[11] = ((__pts >> 14) & 0xFE) | 0x01;                                       \
         _pes->buffer[12] = ((__pts >> 7 ) & 0xFF);                                              \
         _pes->buffer[13] = ((__pts << 1 ) & 0xFE) | 0x01;                                       \
-    }
+    } while(0)
 
 #define __PES_IS_DTS(_pes) (PES_IS_SYNTAX_SPEC(_pes) && (_pes->buffer[7] & 0x40))
 
@@ -297,7 +288,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
     ))
 
 #define PES_SET_DTS(_pes, _dts)                                                                 \
-    {                                                                                           \
+    do {                                                                                        \
         asc_assert(__PES_IS_DTS(_pes), "DTS flag is not set");                                  \
         const uint64_t __dts = _dts;                                                            \
         _pes->buffer[9] = _pes->buffer[9] | 0x10;                                               \
@@ -306,46 +297,39 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         _pes->buffer[16] = ((__dts >> 14) & 0xFE) | 0x01;                                       \
         _pes->buffer[17] = ((__dts >> 7 ) & 0xFF);                                              \
         _pes->buffer[18] = ((__dts << 1 ) & 0xFE) | 0x01;                                       \
-    }
+    } while(0)
 
 #define PES_SET_SIZE(_pes)                                                                      \
-    {                                                                                           \
+    do {                                                                                        \
         if(_pes->type != MPEGTS_PACKET_VIDEO)                                                   \
-        {                                                                                       \
-            const uint16_t __size = _pes->buffer_size - PES_HEADER_SIZE;                        \
-            _pes->buffer[4] = (__size >> 8) & 0xFF;                                             \
-            _pes->buffer[5] = (__size     ) & 0xFF;                                             \
-        }                                                                                       \
+            U16_TO_BUFFER(_pes->buffer_size - PES_HEADER_SIZE, &_pes->buffer[4]);               \
         else                                                                                    \
-        {                                                                                       \
-            _pes->buffer[4] = 0x00;                                                             \
-            _pes->buffer[5] = 0x00;                                                             \
-        }                                                                                       \
-    }
+            U16_TO_BUFFER(0, &_pes->buffer[4]);                                                 \
+    } while(0)
 
 /*
- * ooooooooo  ooooooooooo  oooooooo8    oooooooo8
- *  888    88o 888    88  888         o888     88
- *  888    888 888ooo8     888oooooo  888
- *  888    888 888    oo          888 888o     oo
- * o888ooo88  o888ooo8888 o88oooo888   888oooo88
+ *  ____
+ * |  _ \  ___  ___  ___
+ * | | | |/ _ \/ __|/ __|
+ * | |_| |  __/\__ \ (__ _
+ * |____/ \___||___/\___(_)
  *
  */
 
-#define DESC_CA_CAID(_desc) ((_desc[2] << 8) | _desc[3])
-#define DESC_CA_PID(_desc) (((_desc[4] & 0x1F) << 8) | _desc[5])
+#define DESC_CA_CAID(_desc) BUFFER_TO_U16(&(_desc)[2])
+#define DESC_CA_PID(_desc) BUFFER_TO_PID(&(_desc)[4])
 
 /*
- * oooooooooo   o   ooooooooooo
- *  888    888 888  88  888  88
- *  888oooo88 8  88     888
- *  888      8oooo88    888
- * o888o   o88o  o888o o888o
+ *  ____   _  _____
+ * |  _ \ / \|_   _|
+ * | |_) / _ \ | |
+ * |  __/ ___ \| |
+ * |_| /_/   \_\_|
  *
  */
 
- #define PAT_INIT(_psi, _tsid, _version)                                                        \
-    {                                                                                           \
+#define PAT_INIT(_psi, _tsid, _version)                                                         \
+    do {                                                                                        \
         _psi->buffer[0] = 0x00;                                                                 \
         _psi->buffer[1] = 0x80 | 0x30;                                                          \
         PAT_SET_TSID(_psi, _tsid);                                                              \
@@ -355,21 +339,24 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         _psi->buffer[7] = 0x00;                                                                 \
         _psi->buffer_size = 8 + CRC32_SIZE;                                                     \
         PSI_SET_SIZE(_psi);                                                                     \
-    }
+    } while(0)
 
-#define PAT_GET_TSID(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
-#define PAT_SET_TSID(_psi, _tsid)                                                               \
-    {                                                                                           \
-        const uint16_t __tsid = _tsid;                                                          \
-        _psi->buffer[3] = __tsid >> 8;                                                          \
-        _psi->buffer[4] = __tsid & 0xFF;                                                        \
-    }
+#define PAT_GET_TSID(_psi) BUFFER_TO_U16(&_psi->buffer[3])
+#define PAT_SET_TSID(_psi, _tsid) U16_TO_BUFFER(_tsid, &_psi->buffer[3])
 
 #define PAT_GET_VERSION(_psi) ((_psi->buffer[5] & 0x3E) >> 1)
 #define PAT_SET_VERSION(_psi, _version)                                                         \
-    {                                                                                           \
+    do {                                                                                        \
         _psi->buffer[5] = 0xC0 | (((_version) << 1) & 0x3E) | (_psi->buffer[5] & 0x01);         \
-    }
+    } while(0)
+
+// section_number
+#define PAT_GET_CSECTION_NUMBER(_psi) (_psi->buffer[6])
+#define PAT_SET_CSECTION_NUMBER(_psi, _number) _psi->buffer[6] = _number
+
+// last_section_number
+#define PAT_GET_LSECTION_NUMBER(_psi) (_psi->buffer[7])
+#define PAT_SET_LSECTION_NUMBER(_psi, _number) _psi->buffer[7] = _number
 
 #define PAT_ITEMS_FIRST(_psi) (&_psi->buffer[8])
 #define PAT_ITEMS_EOL(_psi, _pointer)                                                           \
@@ -377,49 +364,43 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
 #define PAT_ITEMS_NEXT(_psi, _pointer) _pointer += 4
 
 #define PAT_ITEMS_APPEND(_psi, _pnr, _pid)                                                      \
-    {                                                                                           \
+    do {                                                                                        \
         uint8_t *const __pointer_a = &_psi->buffer[_psi->buffer_size - CRC32_SIZE];             \
         PAT_ITEM_SET_PNR(_psi, __pointer_a, _pnr);                                              \
         PAT_ITEM_SET_PID(_psi, __pointer_a, _pid);                                              \
         _psi->buffer_size += 4;                                                                 \
         PSI_SET_SIZE(_psi);                                                                     \
-    }
+    } while(0)
 
 #define PAT_ITEMS_FOREACH(_psi, _ptr)                                                           \
     for(_ptr = PAT_ITEMS_FIRST(_psi)                                                            \
         ; !PAT_ITEMS_EOL(_psi, _ptr)                                                            \
         ; PAT_ITEMS_NEXT(_psi, _ptr))
 
-#define PAT_ITEM_GET_PNR(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
-#define PAT_ITEM_GET_PID(_psi, _pointer) (((_pointer[2] & 0x1F) << 8) | _pointer[3])
+#define PAT_ITEM_GET_PNR(_psi, _pointer) BUFFER_TO_U16(&(_pointer)[0])
+#define PAT_ITEM_GET_PID(_psi, _pointer) BUFFER_TO_PID(&(_pointer)[2])
 
-#define PAT_ITEM_SET_PNR(_psi, _pointer, _pnr)                                                  \
-    {                                                                                           \
-        uint8_t *const __pointer = _pointer;                                                    \
-        const uint16_t __pnr = _pnr;                                                            \
-        __pointer[0] = __pnr >> 8;                                                              \
-        __pointer[1] = __pnr & 0xFF;                                                            \
-    }
+#define PAT_ITEM_SET_PNR(_psi, _pointer, _pnr) U16_TO_BUFFER(_pnr, _pointer)
 
 #define PAT_ITEM_SET_PID(_psi, _pointer, _pid)                                                  \
-    {                                                                                           \
+    do {                                                                                        \
         uint8_t *const __pointer = _pointer;                                                    \
         const uint16_t __pid = _pid;                                                            \
         __pointer[2] = 0xE0 | ((__pid >> 8) & 0x1F);                                            \
         __pointer[3] = __pid & 0xFF;                                                            \
-    }
+    } while(0)
 
 /*
- *   oooooooo8     o   ooooooooooo
- * o888     88    888  88  888  88
- * 888           8  88     888
- * 888o     oo  8oooo88    888
- *  888oooo88 o88o  o888o o888o
+ *   ____    _  _____
+ *  / ___|  / \|_   _|
+ * | |     / _ \ | |
+ * | |___ / ___ \| |
+ *  \____/_/   \_\_|
  *
  */
 
-#define CAT_GET_VERSION(_psi) PAT_GET_VERSION(_psi)
-#define CAT_SET_VERSION(_psi, _version) PAT_SET_VERSION(_psi, _version)
+#define CAT_GET_VERSION PAT_GET_VERSION
+#define CAT_SET_VERSION PAT_SET_VERSION
 
 #define CAT_DESC_FIRST(_psi) (&_psi->buffer[8])
 #define CAT_DESC_EOL(_psi, _desc_pointer) PAT_ITEMS_EOL(_psi, _desc_pointer)
@@ -431,16 +412,70 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         ; CAT_DESC_NEXT(_psi, _ptr))
 
 /*
- * oooooooooo oooo     oooo ooooooooooo
- *  888    888 8888o   888  88  888  88
- *  888oooo88  88 888o8 88      888
- *  888        88  888  88      888
- * o888o      o88o  8  o88o    o888o
+ *  _   _ ___ _____
+ * | \ | |_ _|_   _|
+ * |  \| || |  | |
+ * | |\  || |  | |
+ * |_| \_|___| |_|
+ *
+ */
+
+#define NIT_GET_VERSION PAT_GET_VERSION
+#define NIT_SET_VERSION PAT_SET_VERSION
+
+#define NIT_GET_CSECTION_NUMBER PAT_GET_CSECTION_NUMBER
+#define NIT_SET_CSECTION_NUMBER PAT_SET_CSECTION_NUMBER
+
+#define NIT_GET_LSECTION_NUMBER PAT_GET_LSECTION_NUMBER
+#define NIT_SET_LSECTION_NUMBER PAT_SET_LSECTION_NUMBER
+
+#define NIT_DESC_FIRST(_psi) (&_psi->buffer[10])
+#define __NIT_DESC_SIZE(_psi) (BUFFER_TO_U16(&_psi->buffer[8]) & 0x0FFF)
+#define NIT_DESC_EOL(_psi, _desc_pointer) \
+    (_desc_pointer >= (NIT_DESC_FIRST(_psi) + __NIT_DESC_SIZE(_psi)))
+#define NIT_DESC_NEXT(_psi, _desc_pointer) _desc_pointer += 2 + _desc_pointer[1]
+
+#define NIT_DESC_FOREACH(_psi, _ptr)                                                            \
+    for(_ptr = NIT_DESC_FIRST(_psi)                                                             \
+        ; !NIT_DESC_EOL(_psi, _ptr)                                                             \
+        ; NIT_DESC_NEXT(_psi, _ptr))
+
+#define __NIT_ITEM_DESC_SIZE(_ptr) (BUFFER_TO_U16(&(_ptr)[4]) & 0x0FFF)
+
+#define NIT_ITEMS_FIRST(_psi) (&_psi->buffer[10 + __NIT_DESC_SIZE(_psi) + 2])
+#define NIT_ITEMS_EOL(_psi, _ptr)                                                           \
+    ((_ptr - _psi->buffer) >= (_psi->buffer_size - CRC32_SIZE))
+#define NIT_ITEMS_NEXT(_psi, _ptr) _ptr += 6 + __NIT_ITEM_DESC_SIZE(_ptr)
+
+#define NIT_ITEMS_FOREACH(_psi, _ptr)                                                           \
+    for(_ptr = NIT_ITEMS_FIRST(_psi)                                                            \
+        ; !NIT_ITEMS_EOL(_psi, _ptr)                                                            \
+        ; NIT_ITEMS_NEXT(_psi, _ptr))
+
+#define NIT_ITEM_GET_TSID(_psi, _ptr) BUFFER_TO_U16(&(_ptr)[0])
+#define NIT_ITEM_GET_ONID(_psi, _ptr) BUFFER_TO_U16(&(_ptr)[2])
+
+#define NIT_ITEM_DESC_FIRST(_ptr) (&_ptr[6])
+#define NIT_ITEM_DESC_EOL(_ptr, _desc_pointer)                                              \
+    (_desc_pointer >= NIT_ITEM_DESC_FIRST(_ptr) + __NIT_ITEM_DESC_SIZE(_ptr))
+#define NIT_ITEM_DESC_NEXT(_ptr, _desc_pointer) _desc_pointer += 2 + _desc_pointer[1]
+
+#define NIT_ITEM_DESC_FOREACH(_ptr, _desc_ptr)                                                  \
+    for(_desc_ptr = NIT_ITEM_DESC_FIRST(_ptr)                                                   \
+        ; !NIT_ITEM_DESC_EOL(_ptr, _desc_ptr)                                                   \
+        ; NIT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
+
+/*
+ *  ____  __  __ _____
+ * |  _ \|  \/  |_   _|
+ * | |_) | |\/| | | |
+ * |  __/| |  | | | |
+ * |_|   |_|  |_| |_|
  *
  */
 
 #define PMT_INIT(_psi, _pnr, _version, _pcr, _desc, _desc_size)                                 \
-    {                                                                                           \
+    do {                                                                                        \
         _psi->buffer[0] = 0x02;                                                                 \
         _psi->buffer[1] = 0x80 | 0x30;                                                          \
         PMT_SET_PNR(_psi, _pnr);                                                                \
@@ -465,29 +500,24 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         }                                                                                       \
         _psi->buffer_size = 12 + __desc_size + CRC32_SIZE;                                      \
         PSI_SET_SIZE(_psi);                                                                     \
-    }
+    } while(0)
 
-#define PMT_GET_PNR(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
-#define PMT_SET_PNR(_psi, _pnr)                                                                 \
-    {                                                                                           \
-        const uint16_t __pnr = _pnr;                                                            \
-        _psi->buffer[3] = __pnr >> 8;                                                           \
-        _psi->buffer[4] = __pnr & 0xFF;                                                         \
-    }
+#define PMT_GET_PNR(_psi) BUFFER_TO_U16(&_psi->buffer[3])
+#define PMT_SET_PNR(_psi, _pnr) U16_TO_BUFFER(_pnr, &_psi->buffer[3])
 
-#define PMT_GET_PCR(_psi) (((_psi->buffer[8] & 0x1F) << 8) | _psi->buffer[9])
+#define PMT_GET_PCR(_psi) BUFFER_TO_PID(&_psi->buffer[8])
 #define PMT_SET_PCR(_psi, _pcr)                                                                 \
-    {                                                                                           \
+    do {                                                                                        \
         const uint16_t __pcr = _pcr;                                                            \
         _psi->buffer[8] = 0xE0 | ((__pcr >> 8) & 0x1F);                                         \
         _psi->buffer[9] = __pcr & 0xFF;                                                         \
-    }
+    } while(0)
 
-#define PMT_GET_VERSION(_psi) PAT_GET_VERSION(_psi)
-#define PMT_SET_VERSION(_psi, _version) PAT_SET_VERSION(_psi, _version)
+#define PMT_GET_VERSION PAT_GET_VERSION
+#define PMT_SET_VERSION PAT_SET_VERSION
 
 #define PMT_DESC_FIRST(_psi) (&_psi->buffer[12])
-#define __PMT_DESC_SIZE(_psi) (((_psi->buffer[10] & 0x0F) << 8) | _psi->buffer[11])
+#define __PMT_DESC_SIZE(_psi) (BUFFER_TO_U16(&_psi->buffer[10]) & 0x0FFF)
 #define PMT_DESC_EOL(_psi, _desc_pointer) \
     (_desc_pointer >= (PMT_DESC_FIRST(_psi) + __PMT_DESC_SIZE(_psi)))
 #define PMT_DESC_NEXT(_psi, _desc_pointer) _desc_pointer += 2 + _desc_pointer[1]
@@ -497,14 +527,14 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         ; !PMT_DESC_EOL(_psi, _ptr)                                                             \
         ; PMT_DESC_NEXT(_psi, _ptr))
 
-#define __PMT_ITEM_DESC_SIZE(_pointer) (((_pointer[3] & 0x0F) << 8) | _pointer[4])
+#define __PMT_ITEM_DESC_SIZE(_pointer) (BUFFER_TO_U16(&(_pointer)[3]) & 0x0FFF)
 
 #define PMT_ITEMS_FIRST(_psi) (PMT_DESC_FIRST(_psi) + __PMT_DESC_SIZE(_psi))
 #define PMT_ITEMS_EOL(_psi, _pointer) PAT_ITEMS_EOL(_psi, _pointer)
 #define PMT_ITEMS_NEXT(_psi, _pointer) _pointer += 5 + __PMT_ITEM_DESC_SIZE(_pointer)
 
 #define PMT_ITEMS_APPEND(_psi, _type, _pid, _desc, _desc_size)                                  \
-    {                                                                                           \
+    do {                                                                                        \
         uint8_t *const __pointer_a = &_psi->buffer[_psi->buffer_size - CRC32_SIZE];             \
         PMT_ITEM_SET_TYPE(_psi, __pointer_a, _type);                                            \
         PMT_ITEM_SET_PID(_psi, __pointer_a, _pid);                                              \
@@ -513,7 +543,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         __pointer_a[4] = __desc_size & 0xFF;                                                    \
         _psi->buffer_size += (__desc_size + 5);                                                 \
         PSI_SET_SIZE(_psi);                                                                     \
-    }
+    } while(0)
 
 #define PMT_ITEMS_FOREACH(_psi, _ptr)                                                           \
     for(_ptr = PMT_ITEMS_FIRST(_psi)                                                            \
@@ -533,39 +563,37 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         ; !PMT_ITEM_DESC_EOL(_ptr, _desc_ptr)                                                   \
         ; PMT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
 
-#define PMT_ITEM_GET_PID(_psi, _pointer) (((_pointer[1] & 0x1F) << 8) | _pointer[2])
+#define PMT_ITEM_GET_PID(_psi, _pointer) BUFFER_TO_PID(&(_pointer)[1])
 #define PMT_ITEM_SET_PID(_psi, _pointer, _pid)                                                  \
-    {                                                                                           \
+    do {                                                                                        \
         uint8_t *const __pointer = _pointer;                                                    \
         const uint16_t __pid = _pid;                                                            \
         __pointer[1] = 0xE0 | ((__pid >> 8) & 0x1F);                                            \
         __pointer[2] = __pid & 0xFF;                                                            \
-    }
+    } while(0)
 
 /*
- *  oooooooo8 ooooooooo   ooooooooooo
- * 888         888    88o 88  888  88
- *  888oooooo  888    888     888
- *         888 888    888     888
- * o88oooo888 o888ooo88      o888o
+ *  ____  ____ _____
+ * / ___||  _ \_   _|
+ * \___ \| | | || |
+ *  ___) | |_| || |
+ * |____/|____/ |_|
  *
  */
 
-#define SDT_GET_TSID(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
-#define SDT_SET_TSID(_psi, _tsid)                                                               \
-    {                                                                                           \
-        const uint16_t __tsid = _tsid;                                                          \
-        _psi->buffer[3] = __tsid >> 8;                                                          \
-        _psi->buffer[4] = __tsid & 0xFF;                                                        \
-    }
+#define SDT_GET_TSID(_psi) BUFFER_TO_U16(&_psi->buffer[3])
+#define SDT_SET_TSID(_psi, _tsid) U16_TO_BUFFER(_tsid, &_psi->buffer[3])
 
-#define SDT_GET_SECTION_NUMBER(_psi) (_psi->buffer[6])
-#define SDT_SET_SECTION_NUMBER(_psi, _id) _psi->buffer[6] = _id
+#define SDT_GET_VERSION PAT_GET_VERSION
+#define SDT_SET_VERSION PAT_SET_VERSION
 
-#define SDT_GET_LAST_SECTION_NUMBER(_psi) (_psi->buffer[7])
-#define SDT_SET_LAST_SECTION_NUMBER(_psi, _id) _psi->buffer[7] = _id
+#define SDT_GET_CSECTION_NUMBER PAT_GET_CSECTION_NUMBER
+#define SDT_SET_CSECTION_NUMBER PAT_SET_CSECTION_NUMBER
 
-#define __SDT_ITEM_DESC_SIZE(_pointer) (((_pointer[3] & 0x0F) << 8) | _pointer[4])
+#define SDT_GET_LSECTION_NUMBER PAT_GET_LSECTION_NUMBER
+#define SDT_SET_LSECTION_NUMBER PAT_SET_LSECTION_NUMBER
+
+#define __SDT_ITEM_DESC_SIZE(_pointer) (BUFFER_TO_U16(&(_pointer)[3]) & 0x0FFF)
 
 #define SDT_ITEMS_FIRST(_psi) (&_psi->buffer[11])
 #define SDT_ITEMS_EOL(_psi, _pointer)                                                           \
@@ -577,15 +605,10 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         ; !SDT_ITEMS_EOL(_psi, _ptr)                                                            \
         ; SDT_ITEMS_NEXT(_psi, _ptr))
 
-#define SDT_ITEM_GET_SID(_psi, _pointer) ((_pointer[0] << 8) | _pointer[1])
-#define SDT_ITEM_SET_SID(_psi, _pointer, _sid)                                                  \
-    {                                                                                           \
-        const uint16_t __sid = _sid;                                                            \
-        _pointer[0] = __sid >> 8;                                                               \
-        _pointer[1] = __sid & 0xFF;                                                             \
-    }
+#define SDT_ITEM_GET_SID(_psi, _pointer) BUFFER_TO_U16(&(_pointer)[0])
+#define SDT_ITEM_SET_SID(_psi, _pointer, _sid) U16_TO_BUFFER(_sid, &(_pointer)[0])
 
-#define SDT_ITEM_DESC_FIRST(_pointer) (&_pointer[5])
+#define SDT_ITEM_DESC_FIRST(_pointer) (&(_pointer)[5])
 #define SDT_ITEM_DESC_EOL(_pointer, _desc_pointer)                                              \
     (_desc_pointer >= SDT_ITEM_DESC_FIRST(_pointer) + __SDT_ITEM_DESC_SIZE(_pointer))
 #define SDT_ITEM_DESC_NEXT(_pointer, _desc_pointer) _desc_pointer += 2 + _desc_pointer[1]
@@ -596,24 +619,31 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         ; SDT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
 
 /*
- * ooooooooooo ooooo ooooooooooo
- *  888    88   888  88  888  88
- *  888ooo8     888      888
- *  888    oo   888      888
- * o888ooo8888 o888o    o888o
+ *  _____ ___ _____
+ * | ____|_ _|_   _|
+ * |  _|  | |  | |
+ * | |___ | |  | |
+ * |_____|___| |_|
  *
  */
 
-#define EIT_GET_PNR(_psi) ((_psi->buffer[3] << 8) | _psi->buffer[4])
-#define EIT_SET_PNR(_psi, _pnr)                                                                 \
-    {                                                                                           \
-        const uint16_t __pnr = _pnr;                                                            \
-        _psi->buffer[3] = __pnr >> 8;                                                           \
-        _psi->buffer[4] = __pnr & 0xFF;                                                         \
-    }
+#define EIT_GET_VERSION PAT_GET_VERSION
+#define EIT_SET_VERSION PAT_SET_VERSION
 
-#define EIT_GET_TSID(_psi) ((_psi->buffer[8] << 8) | _psi->buffer[9])
-#define EIT_GET_ONID(_psi) ((_psi->buffer[10] << 8) | _psi->buffer[11])
+#define EIT_GET_CSECTION_NUMBER PAT_GET_CSECTION_NUMBER
+#define EIT_SET_CSECTION_NUMBER PAT_SET_CSECTION_NUMBER
+
+#define EIT_GET_LSECTION_NUMBER PAT_GET_LSECTION_NUMBER
+#define EIT_SET_LSECTION_NUMBER PAT_SET_LSECTION_NUMBER
+
+#define EIT_GET_PNR(_psi) BUFFER_TO_U16(&_psi->buffer[3])
+#define EIT_SET_PNR(_psi, _pnr) U16_TO_BUFFER(_pnr, &_psi->buffer[3])
+
+#define EIT_GET_TSID(_psi) BUFFER_TO_U16(&_psi->buffer[8])
+#define EIT_SET_TSID(_psi, _tsid) U16_TO_BUFFER(_tsid, &_psi->buffer[8])
+
+#define EIT_GET_ONID(_psi) BUFFER_TO_U16(&_psi->buffer[10])
+#define EIT_SET_ONID(_psi, _onid) U16_TO_BUFFER(_onid, &_psi->buffer[10])
 
 #define EIT_ITEMS_FIRST(_psi) (&_psi->buffer[14])
 #define EIT_ITEMS_EOL(_psi, _pointer)                                                           \
@@ -625,13 +655,13 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         ; !EIT_ITEMS_EOL(_psi, _ptr)                                                            \
         ; EIT_ITEMS_NEXT(_psi, _ptr))
 
-#define EIT_ITEM_GET_EID(_pointer) ((_pointer[0] << 8) | _pointer[1])
-#define EIT_ITEM_START_TM_MJD(_pointer) ((_pointer[2] << 8) | _pointer[3])
-#define EIT_ITEM_START_TM_UTC(_pointer) ((_pointer[4] << 16) | (_pointer[5] << 8) | _pointer[6])
-#define EIT_ITEM_DURATION(_pointer) ((_pointer[7] << 16) | (_pointer[8] << 8) | _pointer[9])
-#define EIT_GET_RUN_STAT(_pointer) (_pointer[10] >> 5)
-#define EIT_GET_FREE_CA(_pointer) ((_pointer[10] & 0x10) >> 4)
-#define EIT_ITEM_DESC_SIZE(_pointer)    (((_pointer[10] & 0x0F) << 8) | _pointer[11])
+#define EIT_ITEM_GET_EID(_pointer) BUFFER_TO_U16(&(_pointer)[0])
+#define EIT_ITEM_START_TM_MJD(_pointer) BUFFER_TO_U16(&(_pointer)[2])
+#define EIT_ITEM_START_TM_UTC(_pointer) BUFFER_TO_U24(&(_pointer)[4])
+#define EIT_ITEM_DURATION(_pointer) BUFFER_TO_U24(&(_pointer)[7])
+#define EIT_GET_RUN_STAT(_pointer) ((_pointer)[10] >> 5)
+#define EIT_GET_FREE_CA(_pointer) (((_pointer)[10] & 0x10) >> 4)
+#define EIT_ITEM_DESC_SIZE(_pointer) (BUFFER_TO_U16(&(_pointer)[10]) & 0x0FFF)
 
 #define EIT_ITEM_DURATION_SEC(_pointer)                                                         \
     ((_pointer[7] >> 4) * 10 + (_pointer[7] & 0x0F)) * 3600 +                                   \
@@ -657,35 +687,40 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
          ; EIT_ITEM_DESC_NEXT(_ptr, _desc_ptr))
 
 /*
- * oooooooooo    oooooooo8 oooooooooo
- *  888    888 o888     88  888    888
- *  888oooo88  888          888oooo88
- *  888        888o     oo  888  88o
- * o888o        888oooo88  o888o  88o8
+ *  ____   ____ ____
+ * |  _ \ / ___|  _ \
+ * | |_) | |   | |_) |
+ * |  __/| |___|  _ <
+ * |_|    \____|_| \_\
  *
  */
 
+#define PCR_TIME_BASE 27000000ULL
+#define PCR_MAX ((0x1FFFFFFFFLL * 300) + 299)
+#define PCR_NONE UINT64_MAX
+#define PCR_MAX_DELTA (30 * PCR_TIME_BASE) // 30s
+
 #define TS_IS_PCR(_ts)                                                                          \
     (                                                                                           \
-        (_ts[0] == 0x47) &&                                                                     \
-        (TS_IS_AF(_ts)) &&              /* adaptation field */                                  \
+        TS_IS_SYNC(_ts) &&                                                                      \
+        TS_IS_AF(_ts) &&                /* adaptation field */                                  \
         (_ts[4] >= 7) &&                /* adaptation field length */                           \
         (_ts[5] & 0x10)                 /* PCR_flag */                                          \
     )
 
-#define TS_GET_PCR(_ts) \
-    (( \
-        ((uint64_t)(_ts)[6] << 25) | \
-        ((uint64_t)(_ts)[7] << 17) | \
-        ((uint64_t)(_ts)[8] << 9 ) | \
-        ((uint64_t)(_ts)[9] << 1 ) | \
-        ((uint64_t)(_ts)[10] >> 7) \
-    ) * 300 + ( \
-        (((uint64_t)(_ts)[10] & 0x01) << 8) | ((uint64_t)(_ts)[11]) \
+#define TS_GET_PCR(_ts)                                                                         \
+    ((                                                                                          \
+        ((uint64_t)(_ts)[6] << 25) |                                                            \
+        ((uint64_t)(_ts)[7] << 17) |                                                            \
+        ((uint64_t)(_ts)[8] << 9 ) |                                                            \
+        ((uint64_t)(_ts)[9] << 1 ) |                                                            \
+        ((uint64_t)(_ts)[10] >> 7)                                                              \
+    ) * 300 + (                                                                                 \
+        (((uint64_t)(_ts)[10] & 0x01) << 8) | ((uint64_t)(_ts)[11])                             \
     ))
 
 #define TS_SET_PCR(_ts, _pcr)                                                                   \
-    {                                                                                           \
+    do {                                                                                        \
         uint8_t *const __ts = _ts;                                                              \
         const uint64_t __pcr = _pcr;                                                            \
         const uint64_t __pcr_base = __pcr / 300;                                                \
@@ -696,7 +731,7 @@ void mpegts_pes_demux(mpegts_pes_t *pes, ts_callback_t callback, void *arg);
         __ts[9] = (__pcr_base >> 1 ) & 0xFF;                                                    \
         __ts[10] = ((__pcr_base << 7) & 0x80) | 0x7E | ((__pcr_ext >> 8) & 0x01);               \
         __ts[11] = __pcr_ext & 0xFF;                                                            \
-    }
+    } while(0)
 
 uint64_t mpegts_pcr_block_us(uint64_t *pcr_last, const uint64_t *pcr_current);
 

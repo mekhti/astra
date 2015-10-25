@@ -466,7 +466,7 @@ static int lua_iso8859_encode(lua_State *L)
     return 1;
 }
 
-LUA_API int luaopen_iso8859(lua_State *L)
+static int __module_open(lua_State *L)
 {
     static const luaL_Reg api[] =
     {
@@ -479,3 +479,14 @@ LUA_API int luaopen_iso8859(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/iso8859 [utf-8 iso8859]";
+}
+
+const asc_module_t asc_module_iso8859 =
+{
+    .open = __module_open,
+    .name = module_name,
+};

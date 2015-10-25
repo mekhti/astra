@@ -262,6 +262,11 @@ static void module_destroy(module_data_t *mod)
     }
 }
 
+static const char * module_name(void)
+{
+    return "postgres";
+}
+
 MODULE_LUA_METHODS()
 {
     { "query", method_query },

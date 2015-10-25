@@ -47,10 +47,12 @@ static void module_init(module_data_t *mod)
 {
     __uarg(mod);
 
+    asc_log_warning("[pidfile] pidfile() has been deprecated, use --pid <FILE> instead");
+
     if(filename)
     {
         asc_log_error("[pidfile] already created in %s", filename);
-        astra_abort();
+        asc_abort();
     }
 
     filename = luaL_checkstring(lua, MODULE_OPTIONS_IDX);
@@ -64,7 +66,7 @@ static void module_init(module_data_t *mod)
     if(fd == -1)
     {
         asc_log_error("[pidfile %s] mkstemp() failed [%s]", filename, strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     static char pid[8];
@@ -72,7 +74,7 @@ static void module_init(module_data_t *mod)
     if(write(fd, pid, size) == -1)
     {
         fprintf(stderr, "[pidfile %s] write() failed [%s]\n", filename, strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     fchmod(fd, 0644);
@@ -83,7 +85,7 @@ static void module_init(module_data_t *mod)
     if(link_ret == -1)
     {
         asc_log_error("[pidfile %s] link() failed [%s]", filename, strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 
     // store in registry to prevent the instance destroying
@@ -101,6 +103,11 @@ static void module_destroy(module_data_t *mod)
     filename = NULL;
 
     luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_self);
+}
+
+static const char * module_name(void)
+{
+    return "astra/pidfile [deprecated]";
 }
 
 MODULE_LUA_METHODS()

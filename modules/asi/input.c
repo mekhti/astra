@@ -19,7 +19,6 @@
  */
 
 #include <astra.h>
-
 #include <sys/ioctl.h>
 
 #define MSG(_msg) "[asi_input %d] " _msg, mod->adapter
@@ -48,7 +47,7 @@ static void asi_on_error(void *arg)
     asc_log_error(MSG("asi read error [%s]"), strerror(errno));
     asc_event_close(mod->event);
     close(mod->fd);
-    astra_abort();
+    asc_abort();
 }
 
 
@@ -76,7 +75,7 @@ static void set_pid(module_data_t *mod, uint16_t pid, int is_set)
     if(pid >= MAX_PID)
     {
         asc_log_error(MSG("PID value must be less then %d"), MAX_PID);
-        astra_abort();
+        asc_abort();
     }
 
     if(is_set)
@@ -108,7 +107,7 @@ static void module_init(module_data_t *mod)
     if(!module_option_number("adapter", &mod->adapter))
     {
         asc_log_error("[asi_input] option 'adapter' is required");
-        astra_abort();
+        asc_abort();
     }
     module_option_boolean("budget", &mod->budget);
 
@@ -151,6 +150,10 @@ static void module_destroy(module_data_t *mod)
         close(mod->fd);
 }
 
+static const char * module_name(void)
+{
+    return "asi_input";
+}
 
 MODULE_STREAM_METHODS()
 

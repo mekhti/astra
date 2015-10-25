@@ -175,7 +175,7 @@ static void dvr_open(module_data_t *mod)
         if(ioctl(mod->dvr_fd, DMX_SET_BUFFER_SIZE, buffer_size) < 0)
         {
             asc_log_error(MSG("DMX_SET_BUFFER_SIZE failed [%s]"), strerror(errno));
-            astra_abort();
+            asc_abort();
         }
     }
 
@@ -219,7 +219,7 @@ static void __dmx_join_pid(module_data_t *mod, int fd, uint16_t pid)
     if(ioctl(fd, DMX_SET_PES_FILTER, &pes_filter) < 0)
     {
         asc_log_error(MSG("DMX_SET_PES_FILTER failed [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
 }
 
@@ -229,7 +229,7 @@ static int __dmx_open(module_data_t *mod)
     if(fd <= 0)
     {
         asc_log_error(MSG("failed to open demux [%s]"), strerror(errno));
-        astra_abort();
+        asc_abort();
     }
     return fd;
 }
@@ -242,7 +242,7 @@ void dmx_set_pid(module_data_t *mod, uint16_t pid, int is_set)
     if(pid >= MAX_PID)
     {
         asc_log_error(MSG("demux: PID value must be less then %d"), MAX_PID);
-        astra_abort();
+        asc_abort();
     }
 
     if(!mod->dmx_fd_list)
@@ -336,13 +336,13 @@ void dmx_close(module_data_t *mod)
 static void option_required(module_data_t *mod, const char *name)
 {
     asc_log_error(MSG("option '%s' is required"), name);
-    astra_abort();
+    asc_abort();
 }
 
 static void option_unknown_type(module_data_t *mod, const char *name, const char *value)
 {
     asc_log_error(MSG("unknown type of the '%s': %s"), name, value);
-    astra_abort();
+    asc_abort();
 }
 
 static void module_option_fec(module_data_t *mod)
@@ -440,7 +440,7 @@ static void module_options_s(module_data_t *mod)
         else
         {
             asc_log_error(MSG("option 'frequency' has wrong value"));
-            astra_abort();
+            asc_abort();
         }
     }
     mod->fe->frequency *= 1000;
@@ -738,7 +738,7 @@ static void module_options(module_data_t *mod)
     if(ca_pmt_delay > 120)
     {
         asc_log_error(MSG("ca_pmt_delay value is too large"));
-        astra_abort();
+        asc_abort();
     }
     mod->ca->pmt_delay = ca_pmt_delay * 1000 * 1000;
 
@@ -823,7 +823,7 @@ static void thread_loop(void *arg)
         if(ret < 0)
         {
             asc_log_error(MSG("poll() failed [%s]"), strerror(errno));
-            astra_abort();
+            asc_abort();
         }
 
         if(ret > 0)
@@ -1068,6 +1068,11 @@ static void module_init(module_data_t *mod)
 static void module_destroy(module_data_t *mod)
 {
     method_close(mod);
+}
+
+static const char * module_name(void)
+{
+    return "dvb/dvb_input [API " _VSTR(DVB_API_VERSION) "." _VSTR(DVB_API_VERSION_MINOR) "]";
 }
 
 MODULE_STREAM_METHODS()

@@ -132,13 +132,25 @@ static int fn_inscript_callback(lua_State *L)
     return 0;
 }
 
-LUA_API int luaopen_inscript(lua_State *L)
+static int __module_open(lua_State *L)
 {
     lua_pushcclosure(L, fn_inscript_callback, 0);
     lua_setglobal(L, __module_name);
 
-    return 1;
+    return 0;
 }
+
+static const char * module_name(void)
+{
+    return "inscript";
+}
+
+const asc_module_t asc_module_inscript =
+{
+    .open = __module_open,
+    .name = module_name,
+};
+
 
 #else
 

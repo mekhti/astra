@@ -20,6 +20,8 @@
 
 #include "../mpegts.h"
 
+static const char __lang[] = "lang";
+
 const char * mpegts_type_name(mpegts_packet_type_t type)
 {
     switch(type)
@@ -103,6 +105,12 @@ const char * mpeg4_profile_level_name(uint8_t type_id)
 
 static void push_description_text(const uint8_t *data)
 {
+    if(!data[0])
+    {
+        lua_pushstring(lua, "");
+        return;
+    }
+
     luaL_Buffer b;
     luaL_buffinit(lua, &b);
 
@@ -120,10 +128,28 @@ static const char __data[] = "data";
 static const char __type_name[] = "type_name";
 static const char __strip[] = "... (strip)";
 
-__asc_inline
-char asc_safe_char(char c)
+static char * safe_str(char *dst, const uint8_t *src, size_t size)
 {
-    return (c > 0x1f && c < 0x7f) ? c : '.';
+    for(size_t i = 0; i < size; ++i)
+    {
+        const char c = src[i];
+        dst[i] = (c > 0x1f && c < 0x7f) ? c : '.';
+    }
+    dst[size] = 0x00;
+    return dst;
+}
+
+static char * lower_str(char *dst, const char *src, size_t size)
+{
+    for(size_t i = 0; i < size; ++i)
+    {
+        const char c = src[i];
+        if(c >= 'A' && c <= 'Z')
+            dst[i] = c + ('a' - 'A');
+        else
+            dst[i] = c;
+    }
+    return dst;
 }
 
 void mpegts_desc_to_lua(const uint8_t *desc)
@@ -132,10 +158,12 @@ void mpegts_desc_to_lua(const uint8_t *desc)
 
     lua_newtable(lua);
 
-    lua_pushnumber(lua, desc[0]);
+    const uint8_t type_id = desc[0];
+
+    lua_pushnumber(lua, type_id);
     lua_setfield(lua, -2, "type_id");
 
-    switch(desc[0])
+    switch(type_id)
     {
         case 0x09:
         { /* CA */
@@ -176,17 +204,12 @@ void mpegts_desc_to_lua(const uint8_t *desc)
         }
         case 0x0A:
         { /* ISO-639 language */
-            static const char __lang[] = "lang";
             lua_pushstring(lua, __lang);
             lua_setfield(lua, -2, __type_name);
 
-            char lang[4];
-            lang[0] = asc_safe_char((char)desc[2]);
-            lang[1] = asc_safe_char((char)desc[3]);
-            lang[2] = asc_safe_char((char)desc[4]);
-            lang[3] = 0x00;
-
-            lua_pushstring(lua, lang);
+            safe_str(data, &desc[2], 3);
+            lower_str(data, data, 3);
+            lua_pushstring(lua, data);
             lua_setfield(lua, -2, __lang);
             break;
         }
@@ -200,18 +223,12 @@ void mpegts_desc_to_lua(const uint8_t *desc)
 
             desc += 3;
             // service provider
-            if(desc[0] > 0)
-                push_description_text(desc);
-            else
-                lua_pushstring(lua, "");
+            push_description_text(desc);
             lua_setfield(lua, -2, "service_provider");
 
             desc += desc[0] + 1;
             // service name
-            if(desc[0] > 0)
-                push_description_text(desc);
-            else
-                lua_pushstring(lua, "");
+            push_description_text(desc);
             lua_setfield(lua, -2, "service_name");
 
             break;
@@ -221,9 +238,10 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             lua_pushstring(lua, "short_event_descriptor");
             lua_setfield(lua, -2, __type_name);
 
-            const char lang[] = { desc[2], desc[3], desc[4], 0x00 };
-            lua_pushstring(lua, lang);
-            lua_setfield(lua, -2, "lang");
+            safe_str(data, &desc[2], 3);
+            lower_str(data, data, 3);
+            lua_pushstring(lua, data);
+            lua_setfield(lua, -2, __lang);
 
             desc += 5; // skip 1:tag + 1:length + 3:lang
             push_description_text(desc);
@@ -246,9 +264,10 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             lua_pushnumber(lua, desc[2] & 0x0F);
             lua_setfield(lua, -2, "last_desc_num");
 
-            const char lang[] = { desc[3], desc[4], desc[5], 0x00 };
-            lua_pushstring(lua, lang);
-            lua_setfield(lua, -2, "lang");
+            safe_str(data, &desc[3], 3);
+            lower_str(data, data, 3);
+            lua_pushstring(lua, data);
+            lua_setfield(lua, -2, __lang);
 
             desc += 6; // skip 1:tag + 1:length + 1:desc_num:last_desc_num + 3:lang
 
@@ -281,11 +300,7 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             }
 
             desc += desc[0] + 1;
-            // text
-            if(desc[0] > 0)
-                 push_description_text(desc);
-            else
-                 lua_pushstring(lua, "");
+            push_description_text(desc);
             lua_setfield(lua, -2, "text");
 
             break;
@@ -298,6 +313,16 @@ void mpegts_desc_to_lua(const uint8_t *desc)
 
             lua_pushnumber(lua, desc[2]);
             lua_setfield(lua, -2, __stream_id);
+            break;
+        }
+        case 0x53:
+        { /* CA Identifier Descriptor */
+            static const char __caid[] = "caid";
+            lua_pushstring(lua, __caid);
+            lua_setfield(lua, -2, __type_name);
+
+            lua_pushinteger(lua, BUFFER_TO_U16(&desc[2]));
+            lua_setfield(lua, -2, __caid);
             break;
         }
         case 0x54:
@@ -347,9 +372,11 @@ void mpegts_desc_to_lua(const uint8_t *desc)
             {
                 const int item_count = luaL_len(lua, -1) + 1;
                 lua_pushnumber(lua, item_count);
+                lua_newtable(lua);
 
-                const char country[] = { _item_ptr[0], _item_ptr[1], _item_ptr[2], 0x00 };
-                lua_pushstring(lua, country);
+                safe_str(data, &_item_ptr[0], 3);
+                lower_str(data, data, 3);
+                lua_pushstring(lua, data);
                 lua_setfield(lua, -2, "country");
 
                 lua_pushnumber(lua, _item_ptr[3]);

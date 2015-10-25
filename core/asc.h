@@ -28,10 +28,13 @@
 #include "event.h"
 #include "list.h"
 #include "log.h"
-#include "loopctl.h"
+#include "random.h"
 #include "socket.h"
-#include "strbuffer.h"
+#include "strbuf.h"
 #include "thread.h"
 #include "timer.h"
+
+#include "lua.h"
+#include "stream.h"
 
 #endif /* _ASC_H_ */

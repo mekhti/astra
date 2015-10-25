@@ -191,6 +191,11 @@ static void module_destroy(module_data_t *mod)
     mpegts_psi_destroy(mod->pmt);
 }
 
+static const char * module_name(void)
+{
+    return "biss_encrypt";
+}
+
 MODULE_STREAM_METHODS()
 MODULE_LUA_METHODS()
 {

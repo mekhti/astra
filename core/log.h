@@ -22,6 +22,25 @@
 #define _ASC_LOG_H_ 1
 
 #include "base.h"
+#include "list.h"
+#include "strbuf.h"
+
+typedef enum
+{
+    ASC_LOG_INFO = 0,
+    ASC_LOG_ERROR,
+    ASC_LOG_WARNING,
+    ASC_LOG_DEBUG,
+} asc_log_type_t;
+
+typedef struct
+{
+    asc_log_type_t type;
+    time_t timestamp;
+    char *message;
+} asc_log_item_t;
+
+typedef void (* log_callback_t)(asc_log_item_t *item);
 
 void asc_log_set_stdout(bool);
 void asc_log_set_debug(bool);
@@ -32,6 +51,8 @@ void asc_log_set_syslog(const char *);
 #endif
 
 void asc_log_hup(void);
+
+void asc_log_core_init(void);
 void asc_log_core_destroy(void);
 
 void asc_log_info(const char *, ...) __fmt_printf(1, 2);

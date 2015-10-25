@@ -22,6 +22,9 @@
 #ifndef _ASC_BASE_H_
 #define _ASC_BASE_H_ 1
 
+#include <config.h>
+#include <version.h>
+
 // TODO:
 #define WITH_LUA 1
 
@@ -59,9 +62,46 @@
 #   define lua_foreach(_lua, _idx) for(lua_pushnil(_lua); lua_next(_lua, _idx); lua_pop(_lua, 1))
 #endif
 
-#define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
+typedef struct module_data_t module_data_t;
 
+#define ASC_ARRAY_SIZE(_a) (sizeof(_a)/sizeof(_a[0]))
 #define ASC_FREE(_o, _m) if(_o != NULL) { _m(_o); _o = NULL; }
+
+#define __OFFSET_16(_b, _s) ((uint16_t)((_b)[_s]) << (16 - (_s * 8) - 8))
+#define BUFFER_TO_U16(_b) (                                                                     \
+    __OFFSET_16(_b, 0) |                                                                        \
+    __OFFSET_16(_b, 1) )
+
+#define __OFFSET_24(_b, _s) ((uint32_t)((_b)[_s]) << (24 - (_s * 8) - 8))
+#define BUFFER_TO_U24(_b) (                                                                     \
+    __OFFSET_24(_b, 0) |                                                                        \
+    __OFFSET_24(_b, 1) |                                                                        \
+    __OFFSET_24(_b, 2) )
+
+#define __OFFSET_32(_b, _s) ((uint32_t)((_b)[_s]) << (32 - (_s * 8) - 8))
+#define BUFFER_TO_U32(_b) (                                                                     \
+    __OFFSET_32(_b, 0) |                                                                        \
+    __OFFSET_32(_b, 1) |                                                                        \
+    __OFFSET_32(_b, 2) |                                                                        \
+    __OFFSET_32(_b, 3))
+
+#define U16_TO_BUFFER(_u, _b)                                                                   \
+    do {                                                                                        \
+        uint8_t *const __PTR = _b;                                                              \
+        const uint16_t __U16_TO_BUFFER = (uint16_t)_u;                                          \
+        __PTR[0] = (__U16_TO_BUFFER >> 8) & 0xFF;                                               \
+        __PTR[1] = (__U16_TO_BUFFER     ) & 0xFF;                                               \
+    } while(0)
+
+#define U32_TO_BUFFER(_u, _b)                                                                   \
+    do {                                                                                        \
+        uint8_t *const __PTR = _b;                                                              \
+        const uint32_t __U32_TO_BUFFER = (uint32_t)_u;                                          \
+        __PTR[0] = (__U32_TO_BUFFER >> 24) & 0xFF;                                              \
+        __PTR[1] = (__U32_TO_BUFFER >> 16) & 0xFF;                                              \
+        __PTR[2] = (__U32_TO_BUFFER >>  8) & 0xFF;                                              \
+        __PTR[3] = (__U32_TO_BUFFER      ) & 0xFF;                                              \
+    } while(0)
 
 #define __uarg(_x) {(void)_x;}
 
@@ -81,5 +121,27 @@
 #define __func_pure __attribute__((__pure__))
 #define __func_const __attribute__((__const__))
 #define __noreturn __attribute__((__noreturn__))
+
+/*
+ * __     __            _
+ * \ \   / /__ _ __ ___(_) ___  _ __
+ *  \ \ / / _ \ '__/ __| |/ _ \| '_ \
+ *   \ V /  __/ |  \__ \ | (_) | | | |
+ *    \_/ \___|_|  |___/_|\___/|_| |_|
+ *
+ */
+
+#define __VSTR(_x) #_x
+#define _VSTR(_x) __VSTR(_x)
+#define _VERSION _VSTR(ASTRA_VERSION_MAJOR) "." \
+                 _VSTR(ASTRA_VERSION_MINOR)
+
+#ifdef DEBUG
+#   define _VDEBUG " debug"
+#else
+#   define _VDEBUG
+#endif
+
+#define ASTRA_VERSION_STR _VERSION _VDEBUG
 
 #endif /* _ASC_BASE_H_ */

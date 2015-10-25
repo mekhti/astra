@@ -2,7 +2,7 @@
  * Astra Main App
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,9 +26,27 @@
 
 #include <setjmp.h>
 
-#include "config.h"
+jmp_buf main_loop;
 
 bool is_sighup = false;
+
+static int lua_astra_exit(lua_State *L)
+{
+    __uarg(L);
+#ifndef _WIN32
+    longjmp(main_loop, 1);
+#else
+    exit(0);
+#endif
+    return 0;
+}
+
+static int lua_astra_reload(lua_State *L)
+{
+    __uarg(L);
+    longjmp(main_loop, 2);
+    return 0;
+}
 
 #ifndef _WIN32
 static void signal_handler(int signum)
@@ -42,7 +60,7 @@ static void signal_handler(int signum)
         case SIGPIPE:
             return;
         default:
-            astra_exit();
+            lua_astra_exit(NULL);
     }
 }
 #else
@@ -51,10 +69,10 @@ static bool WINAPI signal_handler(DWORD signum)
     switch(signum)
     {
         case CTRL_C_EVENT:
-            astra_exit();
+            lua_astra_exit(NULL);
             break;
         case CTRL_BREAK_EVENT:
-            astra_exit();
+            lua_astra_exit(NULL);
             break;
         default:
             break;
@@ -63,31 +81,130 @@ static bool WINAPI signal_handler(DWORD signum)
 }
 #endif
 
-static void asc_srand(void)
-{
-    unsigned long a = clock();
-    unsigned long b = time(NULL);
-#ifndef _WIN32
-    unsigned long c = getpid();
-#else
-    unsigned long c = GetCurrentProcessId();
-#endif
-
-    a = a - b;  a = a - c;  a = a ^ (c >> 13);
-    b = b - c;  b = b - a;  b = b ^ (a << 8);
-    c = c - a;  c = c - b;  c = c ^ (b >> 13);
-    a = a - b;  a = a - c;  a = a ^ (c >> 12);
-    b = b - c;  b = b - a;  b = b ^ (a << 16);
-    c = c - a;  c = c - b;  c = c ^ (b >> 5);
-    a = a - b;  a = a - c;  a = a ^ (c >> 3);
-    b = b - c;  b = b - a;  b = b ^ (a << 10);
-    c = c - a;  c = c - b;  c = c ^ (b >> 15);
-
-    srand(c);
-}
-
 int main(int argc, const char **argv)
 {
+    static const char *arg_log = NULL;
+    static bool arg_no_stdout = false;
+    static bool arg_debug = false;
+    static bool arg_color = false;
+
+#ifndef _WIN32
+    static const char *arg_syslog = NULL;
+    static bool arg_daemon = false;
+    static const char *arg_pid = NULL;
+#endif
+
+    for(int i = 1; i < argc; ++i)
+    {
+        const char *a = argv[i];
+
+        if(!strcmp(a, "--log") && argc > i + 1)
+        {
+            arg_log = argv[i + 1];
+            i += 1;
+        }
+        else if(!strcmp(a, "--no-stdout"))
+        {
+            arg_no_stdout = true;
+        }
+        else if(!strcmp(a, "--debug"))
+        {
+            arg_debug = true;
+        }
+        else if(!strcmp(a, "--color"))
+        {
+            arg_color = true;
+        }
+        else if(!strcmp(a, "-v") || !strcmp(a, "--version"))
+        {
+            printf("Astra v." ASTRA_VERSION_STR "\n");
+            return 0;
+        }
+
+#ifndef _WIN32
+        else if(!strcmp(a, "--syslog") && argc > i + 1)
+        {
+            arg_syslog = argv[i + 1];
+            i += 1;
+        }
+        else if(!strcmp(a, "--daemon"))
+        {
+            arg_daemon = true;
+        }
+        else if(!strcmp(a, "--pid") && argc > i + 1)
+        {
+            arg_pid = argv[i + 1];
+            i += 1;
+        }
+#endif
+    }
+
+#ifndef _WIN32
+    pid_t pid;
+
+    if(arg_daemon)
+    {
+        arg_no_stdout = true;
+
+        pid = fork();
+        if(pid == -1)
+        {
+            printf("daemon: fork() error [%s]\n", strerror(errno));
+            return 1;
+        }
+
+        if(pid != 0)
+            return 0;
+
+        pid = setsid();
+        if(pid == -1)
+        {
+            printf("daemon: setsid() error [%s]\n", strerror(errno));
+            return 1;
+        }
+    }
+    else
+    {
+        pid = getpid();
+    }
+
+    if(arg_pid)
+    {
+        if(access(arg_pid, W_OK) == 0)
+            unlink(arg_pid);
+
+        static char tmp_pidfile[256];
+        snprintf(tmp_pidfile, sizeof(tmp_pidfile), "%s.XXXXXX", arg_pid);
+        int fd = mkstemp(tmp_pidfile);
+        if(fd == -1)
+        {
+            printf("pid: mkstemp() error [%s]\n", strerror(errno));
+            return 1;
+        }
+
+        static char pid_text[8];
+        int size = snprintf(pid_text, sizeof(pid_text), "%d\n", pid);
+        if(write(fd, pid_text, size) == -1)
+        {
+            printf("pid: write() error [%s]\n", strerror(errno));
+            close(fd);
+            if(access(tmp_pidfile, W_OK) == 0)
+                unlink(tmp_pidfile);
+            return 1;
+        }
+        fchmod(fd, 0644);
+        close(fd);
+
+        const int link_ret = link(tmp_pidfile, arg_pid);
+        unlink(tmp_pidfile);
+        if(link_ret == -1)
+        {
+            printf("pid: link() error [%s]\n", strerror(errno));
+            return 1;
+        }
+    }
+#endif
+
 #ifndef _WIN32
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
@@ -100,92 +217,59 @@ int main(int argc, const char **argv)
 
 astra_reload_entry:
 
+    /* init */
     asc_srand();
+    asc_log_core_init();
     asc_thread_core_init();
     asc_timer_core_init();
     asc_socket_core_init();
     asc_event_core_init();
+    asc_lua_core_init(argc, argv);
 
-    lua = luaL_newstate();
-    luaL_openlibs(lua);
+    lua_getglobal(lua, "astra");
+    if(lua_istable(lua, -1))
+    {
+        lua_pushcfunction(lua, lua_astra_exit);
+        lua_setfield(lua, -2, "exit");
 
-    /* load modules */
-    for(int i = 0; astra_mods[i]; i++)
-        astra_mods[i](lua);
+        lua_pushcfunction(lua, lua_astra_reload);
+        lua_setfield(lua, -2, "reload");
+    }
+    lua_pop(lua, 1); // astra
 
-    /* change package.path */
-    lua_getglobal(lua, "package");
+    if(arg_log)
+        asc_log_set_file(arg_log);
+    if(arg_no_stdout)
+        asc_log_set_stdout(false);
+    if(arg_debug)
+        asc_log_set_debug(true);
+    if(arg_color)
+        asc_log_set_color(true);
 
 #ifndef _WIN32
-#   define ASC_PATH_SEP "/"
-#else
-#   define ASC_PATH_SEP "\\"
+    if(arg_syslog)
+        asc_log_set_syslog(arg_syslog);
 #endif
 
-    lua_pushfstring(lua, "." ASC_PATH_SEP "?.lua");
-    lua_setfield(lua, -2, "path");
-    lua_pushstring(lua, "");
-    lua_setfield(lua, -2, "cpath");
-    lua_pop(lua, 1);
-
-    /* argv table */
-    lua_newtable(lua);
-    for(int i = 1; i < argc; ++i)
-    {
-        lua_pushinteger(lua, i);
-        lua_pushstring(lua, argv[i]);
-        lua_settable(lua, -3);
-    }
-    lua_setglobal(lua, "argv");
-
-#define GC_TIMEOUT (1 * 1000 * 1000)
-
-    uint64_t current_time = asc_utime();
-    uint64_t gc_check_timeout = current_time;
+    asc_log_info("[main] Starting Astra v." ASTRA_VERSION_STR);
 
     /* start */
     const int main_loop_status = setjmp(main_loop);
     if(main_loop_status == 0)
     {
-        lua_getglobal(lua, "inscript");
-        if(lua_isfunction(lua, -1))
-        {
-            lua_call(lua, 0, 0);
-        }
-        else
-        {
-            lua_pop(lua, 1);
-
-            if(argc < 2)
-            {
-                printf("Astra " ASTRA_VERSION_STR);
-                printf("Usage: %s script.lua [OPTIONS]\n", argv[0]);
-                astra_exit();
-            }
-
-            int ret = -1;
-
-            if(argv[1][0] == '-' && argv[1][1] == 0)
-                ret = luaL_dofile(lua, NULL);
-            else if(!access(argv[1], R_OK))
-                ret = luaL_dofile(lua, argv[1]);
-            else
-            {
-                printf("Error: initial script isn't found\n");
-                astra_exit();
-            }
-
-            if(ret != 0)
-                luaL_error(lua, "[main] %s", lua_tostring(lua, -1));
-        }
+        uint64_t current_time = asc_utime();
+        uint64_t gc_check_timeout = current_time;
 
         while(true)
         {
-            is_main_loop_idle = true;
+            bool idle = true;
 
-            asc_event_core_loop();
-            asc_timer_core_loop();
-            asc_thread_core_loop();
+            if(!asc_event_core_loop())
+                idle = false;
+            if(!asc_timer_core_loop())
+                idle = false;
+            if(!asc_thread_core_loop())
+                idle = false;
 
             if(is_sighup)
             {
@@ -195,16 +279,16 @@ astra_reload_entry:
                 if(lua_isfunction(lua, -1))
                 {
                     lua_call(lua, 0, 0);
-                    is_main_loop_idle = false;
+                    idle = false;
                 }
                 else
                     lua_pop(lua, 1);
             }
 
-            if(is_main_loop_idle)
+            if(idle)
             {
                 current_time = asc_utime();
-                if((current_time - gc_check_timeout) >= GC_TIMEOUT)
+                if(gc_check_timeout + 1 * 1000 * 1000 < current_time)
                 {
                     gc_check_timeout = current_time;
                     lua_gc(lua, LUA_GCCOLLECT, 0);
@@ -216,18 +300,25 @@ astra_reload_entry:
     }
 
     /* destroy */
-    lua_close(lua);
-
+    asc_lua_core_destroy();
     asc_event_core_destroy();
     asc_socket_core_destroy();
     asc_timer_core_destroy();
     asc_thread_core_destroy();
 
-    asc_log_info("[main] %s", (main_loop_status == 2) ? "reload" : "exit");
+    asc_log_info("[main] %s", (main_loop_status == 2) ? "Reload" : "Exit");
     asc_log_core_destroy();
 
     if(main_loop_status == 2)
         goto astra_reload_entry;
+
+#ifndef _WIN32
+    if(arg_pid)
+    {
+        if(access(arg_pid, W_OK) == 0)
+            unlink(arg_pid);
+    }
+#endif
 
     return 0;
 }

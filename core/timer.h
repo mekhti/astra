@@ -27,7 +27,7 @@ typedef struct asc_timer_t asc_timer_t;
 typedef void (*timer_callback_t)(void *);
 
 void asc_timer_core_init(void);
-void asc_timer_core_loop(void);
+bool asc_timer_core_loop(void) __wur;
 void asc_timer_core_destroy(void);
 
 asc_timer_t * asc_timer_init(unsigned int ms, timer_callback_t callback, void *arg) __wur;

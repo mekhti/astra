@@ -21,7 +21,6 @@
 #include "clock.h"
 #include "timer.h"
 #include "list.h"
-#include "loopctl.h"
 
 struct asc_timer_t
 {
@@ -41,26 +40,25 @@ void asc_timer_core_init(void)
 
 void asc_timer_core_destroy(void)
 {
-    asc_list_first(timer_list);
-    while(!asc_list_eol(timer_list))
+    asc_list_clear(timer_list)
     {
         free(asc_list_data(timer_list));
-        asc_list_remove_current(timer_list);
     }
     asc_list_destroy(timer_list);
     timer_list = NULL;
 }
 
-void asc_timer_core_loop(void)
+bool asc_timer_core_loop(void)
 {
-    int is_detached = 0;
+    int detached = 0;
+    bool idle = true;
 
     asc_list_for(timer_list)
     {
         asc_timer_t *timer = (asc_timer_t *)asc_list_data(timer_list);
         if(!timer->callback)
         {
-            ++is_detached;
+            ++detached;
             continue;
         }
 
@@ -70,35 +68,36 @@ void asc_timer_core_loop(void)
             if(timer->interval == 0)
             {
                 // one shot timer
-                is_main_loop_idle = false;
+                idle = false;
                 timer->callback(timer->arg);
                 timer->callback = NULL;
-                ++is_detached;
+                ++detached;
             }
             else
             {
-                is_main_loop_idle = false;
-                timer->next_shot = cur + timer->interval;
+                idle = false;
+                timer->next_shot += timer->interval;
                 timer->callback(timer->arg);
             }
         }
     }
 
-    if(!is_detached)
-        return;
-
-    asc_list_first(timer_list);
-    while(!asc_list_eol(timer_list))
+    if(detached)
     {
-        asc_timer_t *timer = (asc_timer_t *)asc_list_data(timer_list);
-        if(timer->callback)
-            asc_list_next(timer_list);
-        else
+        for(asc_list_first(timer_list); !asc_list_eol(timer_list); )
         {
-            free(asc_list_data(timer_list));
-            asc_list_remove_current(timer_list);
+            asc_timer_t *timer = (asc_timer_t *)asc_list_data(timer_list);
+            if(timer->callback)
+                asc_list_next(timer_list);
+            else
+            {
+                free(asc_list_data(timer_list));
+                asc_list_remove_current(timer_list);
+            }
         }
     }
+
+    return idle;
 }
 
 asc_timer_t * asc_timer_init(unsigned int ms, void (*callback)(void *), void *arg)

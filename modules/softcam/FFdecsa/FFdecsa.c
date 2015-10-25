@@ -20,7 +20,7 @@
 
 #undef DEBUG
 
-#include <core/compat.h>
+#include <astra.h>
 
 #include "FFdecsa.h"
 

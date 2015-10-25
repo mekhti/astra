@@ -1,11 +1,14 @@
-**The repository freezed till 01 Oct 2015. Latest versions is available on https://cesbo.com**
-
----
-
 # Description
 
 Astra (Advanced Streamer) is a professional software to organize Digital TV Service for
 TV operators and broadcasters, internet service providers, hotels, etc.
 
 * Learn more: https://cesbo.com/astra/
-* Community: http://forum.cesbo.com/
+* Community: https://forum.cesbo.com/
+
+# Installation
+
+    ./configure.sh
+    make
+    cp astra /usr/bin/astra
+    mkdir /etc/astra

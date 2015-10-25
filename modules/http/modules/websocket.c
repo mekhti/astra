@@ -371,7 +371,7 @@ static int module_call(module_data_t *mod)
         sha1_update(&ctx, (const uint8_t *)__websocket_magic, sizeof(__websocket_magic) - 1);
         uint8_t digest[SHA1_DIGEST_SIZE];
         sha1_final(&ctx, digest);
-        accept_key = base64_encode(digest, sizeof(digest), NULL);
+        base64_encode(digest, sizeof(digest), &accept_key, NULL);
     }
     lua_pop(lua, 1); // sec-websocket-key
 
@@ -424,6 +424,11 @@ static void module_destroy(module_data_t *mod)
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
         mod->idx_callback = 0;
     }
+}
+
+static const char * module_name(void)
+{
+    return "http_server/websocket";
 }
 
 MODULE_LUA_METHODS()

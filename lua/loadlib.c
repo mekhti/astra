@@ -139,9 +139,13 @@ static void *ll_load (lua_State *L, const char *path, int seeglb) {
 
 
 static lua_CFunction ll_sym (lua_State *L, void *lib, const char *sym) {
-  lua_CFunction f = (lua_CFunction)dlsym(lib, sym);
-  if (f == NULL) lua_pushstring(L, dlerror());
-  return f;
+  union {
+    lua_CFunction f;
+    void *p;
+  } u;
+  u.p = dlsym(lib, sym);
+  if (u.p == NULL) lua_pushstring(L, dlerror());
+  return u.f;
 }
 
 /* }====================================================== */

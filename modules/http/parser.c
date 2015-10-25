@@ -344,7 +344,8 @@ char * http_authorization(const char *auth_header, size_t size,
         char *s = (char *)malloc(sl + 1);
         sprintf(s, "%s:%s", login, password);
         size_t tl = 0;
-        char *t = base64_encode(s, sl, &tl);
+        char *t = NULL;
+        base64_encode((const uint8_t *)s, sl, &t, &tl);
         char *r = (char *)malloc(6 + tl + 1);
         sprintf(r, "Basic %s", t);
         free(s);

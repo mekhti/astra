@@ -91,6 +91,11 @@ static void module_destroy(module_data_t *mod)
         method_close(mod);
 }
 
+static const char * module_name(void)
+{
+    return "astra/timer";
+}
+
 MODULE_LUA_METHODS()
 {
     { "close", method_close }

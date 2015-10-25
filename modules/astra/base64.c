@@ -33,14 +33,13 @@ static const uint8_t base64_index[256] =
     XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX, XX,XX,XX,XX,
 };
 
-char * base64_encode(const void *in, size_t in_size, size_t *out_size)
+void base64_encode(const uint8_t *in, size_t in_size, char **out, size_t *out_size)
 {
-    if(!in)
-        return NULL;
-
     size_t size = ((in_size + 2) / 3) * 4;
 
-    char *out = (char *)malloc(size + 1);
+    if(!*out)
+        *out = (char *)malloc(size + 1);
+    char *_out = *out;
 
     for(size_t i = 0, j = 0; i < in_size;)
     {
@@ -50,10 +49,10 @@ char * base64_encode(const void *in, size_t in_size, size_t *out_size)
 
         uint32_t triple = (octet_a << 0x10) + (octet_b << 0x08) + octet_c;
 
-        out[j++] = base64_list[(triple >> 3 * 6) & 0x3F];
-        out[j++] = base64_list[(triple >> 2 * 6) & 0x3F];
-        out[j++] = base64_list[(triple >> 1 * 6) & 0x3F];
-        out[j++] = base64_list[(triple >> 0 * 6) & 0x3F];
+        _out[j++] = base64_list[(triple >> 3 * 6) & 0x3F];
+        _out[j++] = base64_list[(triple >> 2 * 6) & 0x3F];
+        _out[j++] = base64_list[(triple >> 1 * 6) & 0x3F];
+        _out[j++] = base64_list[(triple >> 0 * 6) & 0x3F];
     }
 
     switch(in_size % 3)
@@ -61,20 +60,18 @@ char * base64_encode(const void *in, size_t in_size, size_t *out_size)
         case 0:
             break;
         case 1:
-            out[size - 2] = '=';
+            _out[size - 2] = '=';
         case 2:
-            out[size - 1] = '=';
+            _out[size - 1] = '=';
             break;
     }
-    out[size] = 0;
+    _out[size] = 0;
 
     if(out_size)
         *out_size = size;
-
-    return out;
 }
 
-void * base64_decode(const char *in, size_t in_size, size_t *out_size)
+void base64_decode(const char *in, size_t in_size, uint8_t **out, size_t *out_size)
 {
     if(in_size == 0)
     {
@@ -83,16 +80,18 @@ void * base64_decode(const char *in, size_t in_size, size_t *out_size)
     }
 
     if(in_size % 4 != 0)
-        return NULL;
+        return;
 
     size_t size = (in_size / 4) * 3;
+
+    if(!*out)
+        *out = (uint8_t *)malloc(size);
+    uint8_t *_out = *out;
 
     if(in[in_size - 2] == '=')
         size -= 2;
     else if(in[in_size - 1] == '=')
         size -= 1;
-
-    uint8_t *out = (uint8_t *)malloc(size);
 
     for(size_t i = 0, j = 0; i < in_size;)
     {
@@ -107,30 +106,28 @@ void * base64_decode(const char *in, size_t in_size, size_t *out_size)
                         + (sextet_d << 0 * 6);
 
         if (j < size)
-            out[j++] = (triple >> 2 * 8) & 0xFF;
+            _out[j++] = (triple >> 2 * 8) & 0xFF;
         if (j < size)
-            out[j++] = (triple >> 1 * 8) & 0xFF;
+            _out[j++] = (triple >> 1 * 8) & 0xFF;
         if (j < size)
-            out[j++] = (triple >> 0 * 8) & 0xFF;
+            _out[j++] = (triple >> 0 * 8) & 0xFF;
     }
 
     if(out_size)
         *out_size = size;
-
-    return out;
 }
-
 
 static int lua_base64_encode(lua_State *L)
 {
-    const char *data = luaL_checkstring(L, 1);
+    const uint8_t *data = (const uint8_t *)luaL_checkstring(L, 1);
     const int data_size = luaL_len(L, 1);
 
+    char *data_enc = NULL;
     size_t data_enc_size = 0;
-    const char *data_enc = base64_encode(data, data_size, &data_enc_size);
+    base64_encode(data, data_size, &data_enc, &data_enc_size);
     lua_pushlstring(lua, data_enc, data_enc_size);
+    free(data_enc);
 
-    free((void *)data_enc);
     return 1;
 }
 
@@ -139,15 +136,16 @@ static int lua_base64_decode(lua_State *L)
     const char *data = luaL_checkstring(L, 1);
     int data_size = luaL_len(lua, 1);
 
+    uint8_t *data_dec = NULL;
     size_t data_dec_size = 0;
-    const char *data_dec = (char *)base64_decode(data, data_size, &data_dec_size);
-    lua_pushlstring(lua, data_dec, data_dec_size);
+    base64_decode(data, data_size, &data_dec, &data_dec_size);
+    lua_pushlstring(lua, (char *)data_dec, data_dec_size);
+    free(data_dec);
 
-    free((void *)data_dec);
     return 1;
 }
 
-LUA_API int luaopen_base64(lua_State *L)
+static int __module_open(lua_State *L)
 {
     lua_getglobal(L, "string");
 
@@ -170,3 +168,14 @@ LUA_API int luaopen_base64(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/base64";
+}
+
+const asc_module_t asc_module_base64 =
+{
+    .open = __module_open,
+    .name = module_name,
+};

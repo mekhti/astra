@@ -22,13 +22,18 @@
 #define _ASC_ASSERT_H_ 1
 
 #include "log.h"
-#include "loopctl.h"
+#include "lua.h"
 
 #define __asc_assert(_cond, _file, _line, ...)                                                  \
-    ( asc_log_error("%s:%u: failed assertion `%s'", _file, _line, _cond)                  \
-    , asc_log_error(__VA_ARGS__)                                                          \
-    , astra_abort() )
+    do {                                                                                        \
+        asc_log_error("%s:%u: failed assertion `%s'", _file, _line, _cond);                     \
+        asc_log_error(__VA_ARGS__);                                                             \
+        asc_abort();                                                                            \
+    } while(0)
+
 #define asc_assert(_cond, ...)                                                                  \
-    ((_cond) ? (void)0 : __asc_assert(#_cond, __FILE__, __LINE__, __VA_ARGS__))
+    do {                                                                                        \
+        if(!(_cond)) __asc_assert(#_cond, __FILE__, __LINE__, __VA_ARGS__);                     \
+    } while(0)
 
 #endif /* _ASC_ASSERT_H_ */

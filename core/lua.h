@@ -1,5 +1,5 @@
 /*
- * Astra Module: Lua API
+ * Astra Core
  * http://cesbo.com/astra
  *
  * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
@@ -23,7 +23,19 @@
 
 #include "base.h"
 
+extern lua_State *lua;
+
+void asc_lua_core_init(int argc, const char **argv);
+void asc_lua_core_destroy(void);
+void asc_abort(void) __noreturn;
+
 typedef int (*module_callback_t)(module_data_t *);
+
+typedef struct
+{
+    int (*open)(lua_State *);
+    const char * (*name)(void);
+} asc_module_t;
 
 typedef struct
 {
@@ -92,7 +104,7 @@ typedef struct
         module_init(mod);                                                                       \
         return 1;                                                                               \
     }                                                                                           \
-    LUA_API int luaopen_##_name(lua_State *L)                                                   \
+    static int __module_open(lua_State *L)                                                      \
     {                                                                                           \
         static const luaL_Reg meta_methods[] =                                                  \
         {                                                                                       \
@@ -106,7 +118,12 @@ typedef struct
         lua_setmetatable(L, -2);                                                                \
         lua_setglobal(L, __module_name);                                                        \
         return 1;                                                                               \
-    }
+    }                                                                                           \
+    const asc_module_t asc_module_##_name =                                                     \
+    {                                                                                           \
+        .open = __module_open,                                                                  \
+        .name = module_name,                                                                    \
+    };
 
 bool module_option_number(const char *name, int *number);
 bool module_option_string(const char *name, const char **string, size_t *length);

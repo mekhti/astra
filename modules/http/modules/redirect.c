@@ -67,6 +67,10 @@ static void module_destroy(module_data_t *mod)
     __uarg(mod);
 }
 
+static const char * module_name(void)
+{
+    return "http_server/redirect";
+}
 MODULE_LUA_METHODS()
 {
     { NULL, NULL }

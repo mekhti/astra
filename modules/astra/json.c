@@ -107,8 +107,6 @@ static void walk_table(lua_State *L, string_buffer_t *buffer)
     const bool is_array = (luaL_len(L, -1) == pairs_count);
     bool is_first = true;
 
-
-
     if(is_array)
     {
         string_buffer_addchar(buffer, '[');
@@ -200,8 +198,7 @@ static int skip_comment(const char *str, int pos)
 static int scan_string(lua_State *L, const char *str, int pos)
 {
     char c;
-    luaL_Buffer b;
-    luaL_buffinit(L, &b);
+    string_buffer_t *b = string_buffer_alloc();
 
     for(; (c = str[pos]) != '\0'; ++pos)
     {
@@ -214,22 +211,22 @@ static int scan_string(lua_State *L, const char *str, int pos)
             switch(str[pos])
             {
                 case '/':
-                    luaL_addchar(&b, '/');
+                    string_buffer_addchar(b, '/');
                     break;
                 case '\\':
-                    luaL_addchar(&b, '\\');
+                    string_buffer_addchar(b, '\\');
                     break;
                 case '"':
-                    luaL_addchar(&b, '"');
+                    string_buffer_addchar(b, '"');
                     break;
                 case 't':
-                    luaL_addchar(&b, '\t');
+                    string_buffer_addchar(b, '\t');
                     break;
                 case 'r':
-                    luaL_addchar(&b, '\r');
+                    string_buffer_addchar(b, '\r');
                     break;
                 case 'n':
-                    luaL_addchar(&b, '\n');
+                    string_buffer_addchar(b, '\n');
                     break;
                 default:
                     return -1;
@@ -237,10 +234,10 @@ static int scan_string(lua_State *L, const char *str, int pos)
         }
 
         else
-            luaL_addchar(&b, c);
+            string_buffer_addchar(b, c);
     }
 
-    luaL_pushresult(&b);
+    string_buffer_push(L, b);
     return pos + 1;
 }
 
@@ -559,7 +556,7 @@ static int json_save(lua_State *L)
     return 1;
 }
 
-LUA_API int luaopen_json(lua_State *L)
+static int __module_open(lua_State *L)
 {
     static const luaL_Reg api[] =
     {
@@ -575,3 +572,14 @@ LUA_API int luaopen_json(lua_State *L)
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/json";
+}
+
+const asc_module_t asc_module_json =
+{
+    .open = __module_open,
+    .name = module_name,
+};

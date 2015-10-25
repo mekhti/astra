@@ -103,11 +103,8 @@ static void on_ts(void *arg, const uint8_t *ts)
         response->buffer_count = 0;
         response->buffer_read = 0;
         response->buffer_write = 0;
-        if(response->is_socket_busy)
-        {
-            asc_socket_set_on_ready(client->sock, NULL);
-            response->is_socket_busy = false;
-        }
+
+        asc_timer_one_shot(1, (timer_callback_t)http_client_close, client);
         return;
     }
 
@@ -304,6 +301,11 @@ static void module_destroy(module_data_t *mod)
         luaL_unref(lua, LUA_REGISTRYINDEX, mod->idx_callback);
         mod->idx_callback = 0;
     }
+}
+
+static const char * module_name(void)
+{
+    return "http_server/upstream";
 }
 
 MODULE_LUA_METHODS()

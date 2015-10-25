@@ -192,7 +192,7 @@ static inline int __check_ident(const uint8_t *ident, const uint8_t *prov)
  * data     :length-4
  */
 
-static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
+static bool cas_check_cat_desc(module_data_t *mod, const uint8_t *desc)
 {
     const int length = desc[1] + 2;
     if(length < 9) // 9 = 6 (desc header) + 3 (viaccess minimal header)
@@ -233,6 +233,11 @@ static bool cas_check_descriptor(module_data_t *mod, const uint8_t *desc)
     }
 
     return (!ident_count);
+}
+
+static bool cas_check_pmt_desc(module_data_t *mod, const uint8_t *desc)
+{
+    return cas_check_cat_desc(mod, desc);
 }
 
 static bool cas_check_caid(uint16_t caid)

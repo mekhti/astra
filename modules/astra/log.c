@@ -2,7 +2,7 @@
  * Astra Module: Log
  * http://cesbo.com/astra
  *
- * Copyright (C) 2012-2013, Andrey Dyldin <and@cesbo.com>
+ * Copyright (C) 2012-2015, Andrey Dyldin <and@cesbo.com>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,17 +41,11 @@
 
 #include <astra.h>
 
-static bool is_debug = false;
+static const char __module_name[] = "log";
 
 static int lua_log_set(lua_State *L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
-
-    // store in registry to prevent the gc cleaning
-    lua_pushstring(L, "astra.log");
-    lua_pushvalue(L, 1);
-    lua_settable(L, LUA_REGISTRYINDEX);
-
 
     for(lua_pushnil(L); lua_next(L, 1); lua_pop(L, 1))
     {
@@ -60,11 +54,8 @@ static int lua_log_set(lua_State *L)
         if(!strcmp(var, "debug"))
         {
             luaL_checktype(L, -1, LUA_TBOOLEAN);
-            is_debug = lua_toboolean(L, -1);
+            const bool is_debug = lua_toboolean(L, -1);
             asc_log_set_debug(is_debug);
-
-            lua_pushvalue(lua, -1);
-            lua_setglobal(lua, "debug");
         }
         else if(!strcmp(var, "filename"))
         {
@@ -113,15 +104,49 @@ static int lua_log_info(lua_State *L)
 
 static int lua_log_debug(lua_State *L)
 {
-    if(is_debug)
+    if(asc_log_is_debug())
         asc_log_debug("%s", luaL_checkstring(L, 1));
     return 0;
 }
 
-LUA_API int luaopen_log(lua_State *L)
+static int lua_log_is_debug(lua_State *L)
 {
-    is_debug = asc_log_is_debug();
+    lua_pushboolean(L, asc_log_is_debug());
+    return 1;
+}
 
+static int lua_log_pop(lua_State *L)
+{
+    lua_newtable(L);
+
+    asc_list_t *log_list = asc_log_pop_list();
+    asc_list_clear(log_list)
+    {
+        asc_log_item_t *i = (asc_log_item_t *)asc_list_data(log_list);
+
+        const int item_count = luaL_len(L, -1) + 1;
+        lua_pushnumber(L, item_count);
+
+        lua_newtable(L);
+        lua_pushnumber(L, i->type);
+        lua_setfield(L, -2, "type");
+        lua_pushnumber(L, (lua_Number)i->timestamp);
+        lua_setfield(L, -2, "time");
+        lua_pushstring(L, i->message);
+        lua_setfield(L, -2, "text");
+
+        lua_settable(L, -3);
+
+        free(i->message);
+        free(i);
+    }
+    asc_list_destroy(log_list);
+
+    return 1;
+}
+
+static int __module_open(lua_State *L)
+{
     static const luaL_Reg api[] =
     {
         { "set", lua_log_set },
@@ -129,11 +154,24 @@ LUA_API int luaopen_log(lua_State *L)
         { "warning", lua_log_warning },
         { "info", lua_log_info },
         { "debug", lua_log_debug },
+        { "is_debug", lua_log_is_debug },
+        { "pop", lua_log_pop },
         { NULL, NULL }
     };
 
-    luaL_newlib(L, api);
-    lua_setglobal(L, "log");
+    luaL_newlib(lua, api);
+    lua_setglobal(L, __module_name);
 
     return 0;
 }
+
+static const char * module_name(void)
+{
+    return "astra/log";
+}
+
+const asc_module_t asc_module_log =
+{
+    .open = __module_open,
+    .name = module_name,
+};
