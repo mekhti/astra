@@ -832,7 +832,6 @@ astra_options = {
 }
 
 function astra_parse_options(idx)
-    -- load modifications
     local s = package.config:sub(1, 1)
     local p = nil
     if s == "/" then

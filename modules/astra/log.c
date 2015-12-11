@@ -115,36 +115,6 @@ static int lua_log_is_debug(lua_State *L)
     return 1;
 }
 
-static int lua_log_pop(lua_State *L)
-{
-    lua_newtable(L);
-
-    asc_list_t *log_list = asc_log_pop_list();
-    asc_list_clear(log_list)
-    {
-        asc_log_item_t *i = (asc_log_item_t *)asc_list_data(log_list);
-
-        const int item_count = luaL_len(L, -1) + 1;
-        lua_pushnumber(L, item_count);
-
-        lua_newtable(L);
-        lua_pushnumber(L, i->type);
-        lua_setfield(L, -2, "type");
-        lua_pushnumber(L, (lua_Number)i->timestamp);
-        lua_setfield(L, -2, "time");
-        lua_pushstring(L, i->message);
-        lua_setfield(L, -2, "text");
-
-        lua_settable(L, -3);
-
-        free(i->message);
-        free(i);
-    }
-    asc_list_destroy(log_list);
-
-    return 1;
-}
-
 static int __module_open(lua_State *L)
 {
     static const luaL_Reg api[] =
@@ -155,7 +125,6 @@ static int __module_open(lua_State *L)
         { "info", lua_log_info },
         { "debug", lua_log_debug },
         { "is_debug", lua_log_is_debug },
-        { "pop", lua_log_pop },
         { NULL, NULL }
     };
 
