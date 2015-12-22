@@ -227,8 +227,10 @@ static void on_newcamd_ready(void *arg)
         const uint16_t pnr = mod->packet->decrypt->cas_pnr;
         U16_TO_BUFFER(pnr, &mod->buffer[4]);
     }
-
-    U16_TO_BUFFER(mod->payload_size & 0x0FFF, &mod->buffer[NEWCAMD_HEADER_SIZE + 1]);
+    else
+    {
+        U16_TO_BUFFER(mod->payload_size & 0x0FFF, &mod->buffer[NEWCAMD_HEADER_SIZE + 1]);
+    }
 
     size_t packet_size = NEWCAMD_HEADER_SIZE + 3 + mod->payload_size;
     const uint8_t no_pad_bytes = (8 - ((packet_size - 1) % 8)) % 8;
